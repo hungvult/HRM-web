@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HRM Web
 
-## Getting Started
+Web application for the HRM system, built with Next.js, React, TypeScript, Tailwind CSS, and ESLint.
 
-First, run the development server:
+## Requirements
+
+- Node.js 20 or newer
+- npm
+- Git
+
+## Setup
+
+Clone the repository and move into the web folder:
+
+```bash
+git clone https://github.com/hungvult/HRM-web.git
+cd HRM-web
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+If the project later adds environment variables, create a local `.env.local` file from the provided example file and update the values for your environment.
+
+## Run Locally
+
+Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open the app at:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Build
 
-## Learn More
+Create a production build:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Start the production server:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run start
+```
 
-## Deploy on Vercel
+## Lint
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Run ESLint:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run lint
+```
+
+## Project Structure
+
+```text
+src/
+  app/
+    globals.css
+    layout.tsx
+    page.tsx
+```
+
+## Troubleshooting
+
+- If dependencies fail to install, confirm that Node.js 20 or newer is installed.
+- If port `3000` is already in use, stop the other process or run Next.js on another port.
+- If build fails after changing UI code, run `npm run lint` and fix reported issues before building again.
