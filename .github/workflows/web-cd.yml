@@ -1,0 +1,106 @@
+name: Web CD
+
+on:
+  push:
+    branches:
+      - develop
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/hungvult/hrm-web
+
+jobs:
+  docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: docker
+
+    steps:
+      - name: Deploy web to VPS
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          envs: GHCR_PAT
+          script_stop: true
+          script: |
+            set -e
+
+            echo "========================================"
+            echo "Starting HRM Web deployment"
+            echo "========================================"
+
+            echo "Logging in to GHCR..."
+            echo "$GHCR_PAT" | docker login ghcr.io \
+              --username hungvult \
+              --password-stdin
+
+            echo "Pulling latest web image..."
+            docker pull ghcr.io/hungvult/hrm-web:latest
+
+            echo "Stopping old HRM web container..."
+            docker stop hrm-web 2>/dev/null || true
+
+            echo "Removing old HRM web container..."
+            docker rm hrm-web 2>/dev/null || true
+
+            echo "Starting new HRM web container..."
+            docker run -d \
+              --name hrm-web \
+              --restart unless-stopped \
+              -p 8083:3000 \
+              ghcr.io/hungvult/hrm-web:latest
+
+            echo "Waiting for web container..."
+            sleep 10
+
+            echo "Checking container status..."
+            docker ps --filter name=hrm-web
+
+            echo "Checking web logs..."
+            docker logs hrm-web --tail 30
+
+            echo "Testing web endpoint..."
+            curl -I --max-time 10 http://localhost:8083 || true
+
+            echo "Logging out from GHCR..."
+            docker logout ghcr.io || true
+
+            echo "========================================"
+            echo "HRM Web deployment completed"
+            echo "========================================"
