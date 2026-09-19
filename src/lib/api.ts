@@ -4,6 +4,7 @@ type ApiBody = BodyInit | Record<string, unknown> | unknown[] | null;
 
 export type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: ApiBody;
+  auth?: boolean;
 };
 
 export class ApiError extends Error {
@@ -92,7 +93,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     headers.set("Accept", "application/json");
   }
 
-  if (token && !headers.has("Authorization")) {
+  if (options.auth !== false && token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 

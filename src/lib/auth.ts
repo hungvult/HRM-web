@@ -35,6 +35,8 @@ function pickToken(response: LoginResponse, keys: string[]) {
 export async function loginWithApi(payload: LoginPayload) {
   const response = await apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
+    auth: false,
+    credentials: "omit",
     body: {
       usernameOrEmail: payload.identity,
       password: payload.password,
