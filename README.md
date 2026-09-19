@@ -23,7 +23,13 @@ Install dependencies:
 npm install
 ```
 
-If the project later adds environment variables, create a local `.env.local` file from the provided example file and update the values for your environment.
+Create a local `.env.local` file and point the web app to the backend test API:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api
+```
+
+Replace the value with the staging/test API URL when the backend is deployed.
 
 ## Run Locally
 
@@ -66,9 +72,15 @@ npm run lint
 ```text
 src/
   app/
+    accounts/
+      page.tsx
     globals.css
     layout.tsx
     page.tsx
+  lib/
+    accounts.ts
+    api.ts
+    auth.ts
 ```
 
 ## Troubleshooting
