@@ -732,18 +732,21 @@ export default function AccountManagementPage() {
         </div>
       </main>
 
-      <AccountFormDialog
-        account={editingAccount}
-        isOpen={formOpen}
-        isSaving={isSaving}
-        onClose={() => {
-          if (!isSaving) {
-            setFormOpen(false);
-            setEditingAccount(null);
-          }
-        }}
-        onSubmit={handleSubmitAccount}
-      />
+      {formOpen ? (
+        <AccountFormDialog
+          key={editingAccount?.id ?? "create"}
+          account={editingAccount}
+          isOpen={formOpen}
+          isSaving={isSaving}
+          onClose={() => {
+            if (!isSaving) {
+              setFormOpen(false);
+              setEditingAccount(null);
+            }
+          }}
+          onSubmit={handleSubmitAccount}
+        />
+      ) : null}
     </div>
   );
 }
@@ -826,12 +829,6 @@ function AccountFormDialog({
   onSubmit: (payload: AccountFormPayload) => Promise<void>;
 }) {
   const [formError, setFormError] = useState("");
-
-  useEffect(() => {
-    if (isOpen) {
-      setFormError("");
-    }
-  }, [account, isOpen]);
 
   if (!isOpen) {
     return null;
