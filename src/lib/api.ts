@@ -110,7 +110,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 
   if (!response.ok) {
     throw new ApiError(
-      resolveErrorMessage(payload, "Không thể kết nối tới API môi trường test."),
+      resolveErrorMessage(payload, "Không thể hoàn tất yêu cầu. Vui lòng thử lại sau."),
       response.status,
       payload,
     );

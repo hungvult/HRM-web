@@ -228,11 +228,7 @@ export default function AccountManagementPage() {
 
         setAccounts([]);
         setTotal(0);
-        setError(
-          apiError instanceof Error
-            ? apiError.message
-            : "Không thể tải danh sách tài khoản. Vui lòng thử lại sau.",
-        );
+        setError("Không thể tải danh sách tài khoản. Vui lòng thử lại sau.");
       })
       .finally(() => {
         if (!controller.signal.aborted) {
@@ -294,8 +290,8 @@ export default function AccountManagementPage() {
 
       setFormOpen(false);
       setEditingAccount(null);
-    } catch (apiError) {
-      setNotice(apiError instanceof Error ? apiError.message : "Không thể lưu tài khoản.");
+    } catch {
+      setNotice("Không thể lưu tài khoản. Vui lòng kiểm tra thông tin và thử lại.");
     } finally {
       setIsSaving(false);
     }
@@ -312,8 +308,8 @@ export default function AccountManagementPage() {
           ? `Đã khóa tài khoản ${account.username || account.email}.`
           : `Đã mở khóa tài khoản ${account.username || account.email}.`,
       );
-    } catch (apiError) {
-      setNotice(apiError instanceof Error ? apiError.message : "Không thể cập nhật trạng thái.");
+    } catch {
+      setNotice("Không thể cập nhật trạng thái tài khoản. Vui lòng thử lại.");
     }
   }
 
