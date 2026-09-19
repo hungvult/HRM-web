@@ -9,24 +9,19 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
-  ClipboardCheck,
   Clock3,
-  FileChartColumn,
-  GraduationCap,
-  HandCoins,
   IdCard,
   LayoutDashboard,
   LoaderCircle,
   LogOut,
+  MapPin,
   Menu,
   Pencil,
   Plus,
   RefreshCcw,
   Search,
-  Settings2,
   ShieldCheck,
   SlidersHorizontal,
-  UserRound,
   UserRoundCog,
   Users,
   WalletCards,
@@ -52,10 +47,15 @@ const pageSize = 8;
 
 const navGroups = [
   {
-    label: "Vận hành",
+    label: "Quản trị",
     items: [
       { label: "Tổng quan", icon: LayoutDashboard },
       { label: "Quản lý tài khoản", icon: UserRoundCog, active: true },
+    ],
+  },
+  {
+    label: "Nhân sự",
+    items: [
       { label: "Hồ sơ nhân viên", icon: IdCard },
       { label: "Phòng ban", icon: Building2 },
       { label: "Chức vụ", icon: BriefcaseBusiness },
@@ -68,16 +68,7 @@ const navGroups = [
       { label: "Bảng công", icon: Clock3 },
       { label: "Nghỉ phép", icon: CalendarCheck },
       { label: "Bảng lương", icon: WalletCards },
-      { label: "Phúc lợi", icon: HandCoins },
-    ],
-  },
-  {
-    label: "Phát triển",
-    items: [
-      { label: "Tuyển dụng", icon: UserRound },
-      { label: "Đào tạo", icon: GraduationCap },
-      { label: "Đánh giá", icon: ClipboardCheck },
-      { label: "Báo cáo", icon: FileChartColumn },
+      { label: "Địa điểm làm việc", icon: MapPin },
     ],
   },
 ];
@@ -96,6 +87,20 @@ const roleCopy: Record<string, string> = {
   EMPLOYEE: "Nhân viên",
 };
 
+const roleOptions = [
+  { value: "ADMIN", label: "Quản trị viên" },
+  { value: "HR", label: "HR" },
+  { value: "MANAGER", label: "Quản lý" },
+  { value: "EMPLOYEE", label: "Nhân viên" },
+];
+
+const passwordRules = [
+  "Ít nhất 8 ký tự",
+  "Có chữ hoa và chữ thường",
+  "Có ít nhất 1 số",
+  "Có ký tự đặc biệt",
+];
+
 function joinClass(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -113,19 +118,57 @@ function formatLastLogin(value: string) {
   }).format(date);
 }
 
-function formatRoles(roles: string[]) {
-  if (roles.length === 0) {
-    return "Chưa gán";
+function getLastLoginInfo(value: string) {
+  const date = new Date(value);
+
+  if (!value || Number.isNaN(date.getTime())) {
+    return {
+      label: "Chưa đăng nhập",
+      detail: "Chưa có phiên hoạt động",
+      tone: "idle" as const,
+    };
   }
 
-  return roles.map((role) => roleCopy[role] ?? role).join(", ");
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+  const relativeFormatter = new Intl.RelativeTimeFormat("vi-VN", { numeric: "auto" });
+  let label = "Vừa xong";
+
+  if (diffMinutes >= 1 && diffMinutes < 60) {
+    label = relativeFormatter.format(-diffMinutes, "minute");
+  } else if (diffMinutes >= 60 && diffMinutes < 1440) {
+    label = relativeFormatter.format(-Math.round(diffMinutes / 60), "hour");
+  } else if (diffMinutes >= 1440 && diffMinutes < 43200) {
+    label = relativeFormatter.format(-Math.round(diffMinutes / 1440), "day");
+  } else if (diffMinutes >= 43200) {
+    label = formatLastLogin(value);
+  }
+
+  return {
+    label,
+    detail: formatLastLogin(value),
+    tone: diffMinutes <= 1440 ? ("recent" as const) : ("old" as const),
+  };
 }
 
-function splitRoles(value: string) {
-  return value
-    .split(",")
-    .map((role) => role.trim().toUpperCase())
-    .filter(Boolean);
+function validatePassword(password: string) {
+  if (password.length < 8) {
+    return "Mật khẩu cần có ít nhất 8 ký tự.";
+  }
+
+  if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) {
+    return "Mật khẩu cần có cả chữ hoa và chữ thường.";
+  }
+
+  if (!/\d/.test(password)) {
+    return "Mật khẩu cần có ít nhất 1 số.";
+  }
+
+  if (!/[^\da-z]/i.test(password)) {
+    return "Mật khẩu cần có ít nhất 1 ký tự đặc biệt.";
+  }
+
+  return "";
 }
 
 export default function AccountManagementPage() {
@@ -293,13 +336,13 @@ export default function AccountManagementPage() {
 
       <aside
         className={joinClass(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-card transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-white transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex h-20 shrink-0 items-center justify-between px-5">
           <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-md bg-primary font-display text-base font-bold text-primary-foreground shadow-sm">
+            <span className="grid size-10 place-items-center rounded-md bg-primary font-display text-base font-bold text-primary-foreground shadow-sm shadow-primary/20">
               HR
             </span>
             <div>
@@ -317,8 +360,8 @@ export default function AccountManagementPage() {
           </button>
         </div>
 
-        <div className="mx-4 mb-5 flex items-center gap-3 rounded-md border border-border bg-muted/50 p-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold text-primary">
+        <div className="mx-4 mb-5 flex items-center gap-3 rounded-md border border-border bg-accent/35 p-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-primary ring-1 ring-border">
             QT
           </span>
           <div className="min-w-0 flex-1">
@@ -356,7 +399,7 @@ export default function AccountManagementPage() {
                     className={joinClass(
                       "flex h-9 w-full items-center gap-3 rounded-md px-3 text-left text-[0.82rem] font-medium transition-colors",
                       item.active
-                        ? "bg-accent text-primary"
+                        ? "bg-primary/12 text-primary"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
@@ -372,14 +415,7 @@ export default function AccountManagementPage() {
         <div className="shrink-0 border-t border-border p-3">
           <button
             type="button"
-            className="flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <Settings2 className="size-4" />
-            Cài đặt hệ thống
-          </button>
-          <button
-            type="button"
-            className="mt-0.5 flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-destructive hover:bg-destructive/10"
+            className="flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-destructive hover:bg-destructive/10"
             onClick={handleLogout}
           >
             <LogOut className="size-4" />
@@ -389,7 +425,7 @@ export default function AccountManagementPage() {
       </aside>
 
       <main className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur-sm sm:px-7">
+        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-sm sm:px-7">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -410,7 +446,7 @@ export default function AccountManagementPage() {
           </div>
           <button
             type="button"
-            className="flex h-10 shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+            className="flex h-10 shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition hover:bg-primary/90"
             onClick={openCreateForm}
           >
             <Plus className="size-4" />
@@ -419,7 +455,7 @@ export default function AccountManagementPage() {
         </header>
 
         <div className="mx-auto max-w-[1500px] space-y-5 p-4 sm:p-7">
-          <section className="grid grid-cols-2 overflow-hidden rounded-md border border-border bg-card sm:grid-cols-4" aria-label="Thống kê tài khoản">
+          <section className="grid grid-cols-2 overflow-hidden rounded-md border border-border bg-white shadow-sm sm:grid-cols-4" aria-label="Thống kê tài khoản">
             {stats.map((stat, index) => (
               <div
                 key={stat.label}
@@ -430,7 +466,7 @@ export default function AccountManagementPage() {
                   index > 0 && "sm:border-l sm:border-border",
                 )}
               >
-                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-accent text-primary">
+                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
                   <stat.icon className="size-4" />
                 </span>
                 <div>
@@ -444,7 +480,7 @@ export default function AccountManagementPage() {
             ))}
           </section>
 
-          <section aria-labelledby="account-table-title" className="overflow-hidden rounded-md border border-border bg-card shadow-sm">
+          <section aria-labelledby="account-table-title" className="overflow-hidden rounded-md border border-border bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h1 id="account-table-title" className="font-display text-lg font-semibold">
@@ -521,7 +557,7 @@ export default function AccountManagementPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] border-collapse text-left">
                 <thead>
-                  <tr className="border-b border-border bg-muted/45 text-[0.68rem] uppercase text-muted-foreground">
+                  <tr className="border-b border-border bg-muted/55 text-[0.68rem] uppercase text-muted-foreground">
                     <th className="w-12 px-4 py-3">
                       <input
                         type="checkbox"
@@ -536,7 +572,7 @@ export default function AccountManagementPage() {
                     <th className="px-3 py-3 font-semibold">Vai trò</th>
                     <th className="px-3 py-3 font-semibold">Phòng ban</th>
                     <th className="px-3 py-3 font-semibold">Trạng thái</th>
-                    <th className="px-3 py-3 font-semibold">Đăng nhập gần nhất</th>
+                    <th className="px-3 py-3 font-semibold">Hoạt động gần nhất</th>
                     <th className="w-40 px-3 py-3 text-right font-semibold">Thao tác</th>
                   </tr>
                 </thead>
@@ -564,7 +600,7 @@ export default function AccountManagementPage() {
 
                   {!isLoading
                     ? accounts.map((account) => (
-                        <tr key={account.id} className="border-b border-border/70 transition-colors last:border-0 hover:bg-muted/35">
+                        <tr key={account.id} className="border-b border-border/70 transition-colors last:border-0 hover:bg-primary/5">
                           <td className="px-4 py-3">
                             <input
                               type="checkbox"
@@ -582,7 +618,7 @@ export default function AccountManagementPage() {
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex items-center gap-3">
-                              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold text-primary">
+                              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary ring-1 ring-primary/10">
                                 {account.initials}
                               </span>
                               <div>
@@ -595,7 +631,9 @@ export default function AccountManagementPage() {
                             <p className="text-sm font-medium">{account.username || "Chưa cập nhật"}</p>
                             <p className="text-xs text-muted-foreground">{account.email}</p>
                           </td>
-                          <td className="px-3 py-3 text-sm">{formatRoles(account.roles)}</td>
+                          <td className="px-3 py-3">
+                            <RoleTags roles={account.roles} />
+                          </td>
                           <td className="px-3 py-3 text-sm text-muted-foreground">
                             <p>{account.department}</p>
                             {account.position ? (
@@ -605,8 +643,8 @@ export default function AccountManagementPage() {
                           <td className="px-3 py-3">
                             <StatusBadge status={account.status} />
                           </td>
-                          <td className="px-3 py-3 text-xs text-muted-foreground">
-                            {formatLastLogin(account.lastLoginAt)}
+                          <td className="px-3 py-3">
+                            <LastLoginCell value={account.lastLoginAt} />
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex justify-end gap-2">
@@ -714,16 +752,63 @@ function StatusBadge({ status }: { status: AccountStatus }) {
   return (
     <span
       className={joinClass(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[0.68rem] font-semibold",
-        status === "ACTIVE" && "bg-success/12 text-success",
-        status === "PENDING" && "bg-warning/15 text-warning-foreground",
-        status === "LOCKED" && "bg-destructive/10 text-destructive",
-        status === "DISABLED" && "bg-muted text-muted-foreground",
+        "inline-flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-[0.68rem] font-semibold",
+        status === "ACTIVE" && "bg-success/12 text-success ring-1 ring-success/15",
+        status === "PENDING" && "bg-warning/15 text-warning-foreground ring-1 ring-warning/20",
+        status === "LOCKED" && "bg-destructive/10 text-destructive ring-1 ring-destructive/15",
+        status === "DISABLED" && "bg-muted text-muted-foreground ring-1 ring-border",
       )}
     >
       <span className="size-1.5 rounded-full bg-current" />
       {statusCopy[status]}
     </span>
+  );
+}
+
+function RoleTags({ roles }: { roles: string[] }) {
+  if (roles.length === 0) {
+    return <span className="text-xs text-muted-foreground">Chưa gán</span>;
+  }
+
+  return (
+    <div className="flex max-w-52 flex-wrap gap-1.5">
+      {roles.map((role) => (
+        <span
+          key={role}
+          className="inline-flex rounded-full bg-primary/10 px-2 py-1 text-[0.68rem] font-semibold text-primary ring-1 ring-primary/10"
+        >
+          {roleCopy[role] ?? role}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function LastLoginCell({ value }: { value: string }) {
+  const info = getLastLoginInfo(value);
+
+  return (
+    <div
+      className={joinClass(
+        "inline-flex min-w-[8.5rem] items-center gap-2 rounded-md px-2.5 py-1.5",
+        info.tone === "recent" && "bg-primary/10 text-primary",
+        info.tone === "old" && "bg-muted text-foreground",
+        info.tone === "idle" && "bg-muted text-muted-foreground",
+      )}
+    >
+      <span
+        className={joinClass(
+          "size-2 rounded-full",
+          info.tone === "recent" && "bg-primary",
+          info.tone === "old" && "bg-muted-foreground",
+          info.tone === "idle" && "bg-border",
+        )}
+      />
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold leading-tight">{info.label}</span>
+        <span className="block truncate text-[0.68rem] opacity-75">{info.detail}</span>
+      </span>
+    </div>
   );
 }
 
@@ -740,6 +825,14 @@ function AccountFormDialog({
   onClose: () => void;
   onSubmit: (payload: AccountFormPayload) => Promise<void>;
 }) {
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormError("");
+    }
+  }, [account, isOpen]);
+
   if (!isOpen) {
     return null;
   }
@@ -747,15 +840,45 @@ function AccountFormDialog({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    const username = String(formData.get("username") ?? "").trim();
+    const email = String(formData.get("email") ?? "").trim();
+    const employeeId = String(formData.get("employeeId") ?? "").trim();
     const password = String(formData.get("password") ?? "").trim();
+    const roles = formData.getAll("roles").map(String).filter(Boolean);
+
+    setFormError("");
+
+    if (!username || !email) {
+      setFormError("Vui lòng nhập tên đăng nhập và email.");
+      return;
+    }
+
+    if (!account && !employeeId) {
+      setFormError("Vui lòng nhập ID hồ sơ nhân viên.");
+      return;
+    }
+
+    if (roles.length === 0) {
+      setFormError("Vui lòng chọn ít nhất một vai trò.");
+      return;
+    }
+
+    if (!account) {
+      const passwordError = validatePassword(password);
+
+      if (passwordError) {
+        setFormError(passwordError);
+        return;
+      }
+    }
 
     void onSubmit({
-      username: String(formData.get("username") ?? "").trim(),
-      email: String(formData.get("email") ?? "").trim(),
-      employeeId: String(formData.get("employeeId") ?? "").trim(),
+      username,
+      email,
+      employeeId,
       password: password || undefined,
       status: account?.status ?? "ACTIVE",
-      roles: splitRoles(String(formData.get("roles") ?? "")),
+      roles,
     });
   }
 
@@ -781,12 +904,16 @@ function AccountFormDialog({
           </button>
         </div>
 
-        <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={handleSubmit}>
+        <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
+          {formError ? (
+            <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:col-span-2">
+              {formError}
+            </div>
+          ) : null}
           <label className="space-y-1.5">
             <span className="text-sm font-medium">Tên đăng nhập</span>
             <input
               name="username"
-              required
               defaultValue={account?.username}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             />
@@ -796,7 +923,6 @@ function AccountFormDialog({
             <input
               name="email"
               type="email"
-              required
               defaultValue={account?.email}
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
             />
@@ -805,7 +931,6 @@ function AccountFormDialog({
             <span className="text-sm font-medium">ID hồ sơ nhân viên</span>
             <input
               name="employeeId"
-              required={!account}
               readOnly={Boolean(account)}
               defaultValue={account?.employeeId}
               placeholder="Ví dụ: 4"
@@ -817,13 +942,22 @@ function AccountFormDialog({
           </label>
           <label className="space-y-1.5">
             <span className="text-sm font-medium">Vai trò</span>
-            <input
+            <select
               name="roles"
-              required
-              defaultValue={account?.roles.join(", ") || "EMPLOYEE"}
-              placeholder="ADMIN, HR, MANAGER, EMPLOYEE"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
-            />
+              multiple
+              size={4}
+              defaultValue={account?.roles.length ? account.roles : ["EMPLOYEE"]}
+              className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+            >
+              {roleOptions.map((role) => (
+                <option key={role.value} value={role.value}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+            <span className="block text-xs text-muted-foreground">
+              Giữ Ctrl để chọn nhiều vai trò nếu cần.
+            </span>
           </label>
           {!account ? (
             <label className="space-y-1.5 sm:col-span-2">
@@ -831,9 +965,13 @@ function AccountFormDialog({
               <input
                 name="password"
                 type="password"
-                required
+                autoComplete="new-password"
+                placeholder="Ví dụ: Password@123"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
               />
+              <span className="block text-xs text-muted-foreground">
+                {passwordRules.join(" • ")}
+              </span>
             </label>
           ) : null}
 
