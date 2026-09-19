@@ -30,7 +30,6 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getApiBaseUrl } from "@/lib/api";
 import {
   Account,
   AccountFormPayload,
@@ -198,10 +197,10 @@ export default function AccountManagementPage() {
     const disabled = accounts.filter((account) => account.status === "DISABLED").length;
 
     return [
-      { label: "Tổng tài khoản", value: String(total), detail: "Theo dữ liệu API", icon: Users },
-      { label: "Đang hoạt động", value: String(active), detail: "Trong trang hiện tại", icon: ShieldCheck },
-      { label: "Vô hiệu hóa", value: String(disabled), detail: "Không còn sử dụng", icon: Clock3 },
-      { label: "Đã khóa", value: String(locked), detail: "Không thể đăng nhập", icon: BarChart3 },
+      { label: "Tổng tài khoản", value: String(total), detail: "Tài khoản trong hệ thống", icon: Users },
+      { label: "Đang hoạt động", value: String(active), detail: "Sẵn sàng sử dụng", icon: ShieldCheck },
+      { label: "Vô hiệu hóa", value: String(disabled), detail: "Đã tạm ngưng", icon: Clock3 },
+      { label: "Đã khóa", value: String(locked), detail: "Cần quản trị viên mở khóa", icon: BarChart3 },
     ];
   }, [accounts, total]);
 
@@ -232,7 +231,7 @@ export default function AccountManagementPage() {
         setError(
           apiError instanceof Error
             ? apiError.message
-            : "Không thể tải danh sách tài khoản từ môi trường test.",
+            : "Không thể tải danh sách tài khoản. Vui lòng thử lại sau.",
         );
       })
       .finally(() => {
@@ -286,11 +285,11 @@ export default function AccountManagementPage() {
       if (editingAccount) {
         await updateUserAccount(editingAccount.id, payload);
         await updateUserAccountRoles(editingAccount.id, payload.roles);
-        reloadAccounts("Đã cập nhật tài khoản trên môi trường test.");
+        reloadAccounts("Đã cập nhật tài khoản.");
       } else {
         await createUserAccount(payload);
         setPage(1);
-        reloadAccounts("Đã tạo tài khoản mới trên môi trường test.");
+        reloadAccounts("Đã tạo tài khoản mới.");
       }
 
       setFormOpen(false);
@@ -392,9 +391,7 @@ export default function AccountManagementPage() {
                     type="button"
                     onClick={() => {
                       setSidebarOpen(false);
-                      if (!item.active) {
-                        setNotice(`${item.label} sẽ được kết nối ở module tiếp theo.`);
-                      }
+                      if (!item.active) setNotice("");
                     }}
                     className={joinClass(
                       "flex h-9 w-full items-center gap-3 rounded-md px-3 text-left text-[0.82rem] font-medium transition-colors",
@@ -487,7 +484,7 @@ export default function AccountManagementPage() {
                   Danh sách tài khoản
                 </h1>
                 <p className="text-xs text-muted-foreground">
-                  API test: <span className="font-medium text-foreground">{getApiBaseUrl()}</span>
+                  Quản lý người dùng, vai trò và trạng thái truy cập
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -555,7 +552,7 @@ export default function AccountManagementPage() {
             ) : null}
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-left">
+              <table className="w-full min-w-[1180px] table-fixed border-collapse text-left">
                 <thead>
                   <tr className="border-b border-border bg-muted/55 text-[0.68rem] uppercase text-muted-foreground">
                     <th className="w-12 px-4 py-3">
@@ -567,12 +564,12 @@ export default function AccountManagementPage() {
                         className="size-4 rounded border-input accent-primary"
                       />
                     </th>
-                    <th className="px-3 py-3 font-semibold">Nhân viên</th>
-                    <th className="px-3 py-3 font-semibold">Tài khoản</th>
-                    <th className="px-3 py-3 font-semibold">Vai trò</th>
-                    <th className="px-3 py-3 font-semibold">Phòng ban</th>
-                    <th className="px-3 py-3 font-semibold">Trạng thái</th>
-                    <th className="px-3 py-3 font-semibold">Hoạt động gần nhất</th>
+                    <th className="w-[260px] px-3 py-3 font-semibold">Nhân viên</th>
+                    <th className="w-[250px] px-3 py-3 font-semibold">Tài khoản</th>
+                    <th className="w-[170px] px-3 py-3 font-semibold">Vai trò</th>
+                    <th className="w-[190px] px-3 py-3 font-semibold">Phòng ban</th>
+                    <th className="w-[150px] px-3 py-3 font-semibold whitespace-nowrap">Trạng thái</th>
+                    <th className="w-[180px] px-3 py-3 font-semibold whitespace-nowrap">Hoạt động gần nhất</th>
                     <th className="w-40 px-3 py-3 text-right font-semibold">Thao tác</th>
                   </tr>
                 </thead>
@@ -581,7 +578,7 @@ export default function AccountManagementPage() {
                     <tr>
                       <td colSpan={8} className="px-4 py-16 text-center text-sm text-muted-foreground">
                         <LoaderCircle className="mx-auto mb-3 size-7 animate-spin" />
-                        Đang tải dữ liệu từ API test...
+                        Đang tải danh sách tài khoản...
                       </td>
                     </tr>
                   ) : null}
@@ -592,7 +589,7 @@ export default function AccountManagementPage() {
                         <Search className="mx-auto mb-3 size-7 text-muted-foreground" />
                         <p className="font-semibold">Không tìm thấy tài khoản</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Thử từ khóa, trạng thái khác hoặc kiểm tra API test.
+                          Thử đổi từ khóa hoặc bộ lọc trạng thái.
                         </p>
                       </td>
                     </tr>
@@ -640,10 +637,10 @@ export default function AccountManagementPage() {
                               <p className="text-[0.68rem]">{account.position}</p>
                             ) : null}
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3 align-middle">
                             <StatusBadge status={account.status} />
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-3 align-middle">
                             <LastLoginCell value={account.lastLoginAt} />
                           </td>
                           <td className="px-3 py-3">
@@ -755,7 +752,7 @@ function StatusBadge({ status }: { status: AccountStatus }) {
   return (
     <span
       className={joinClass(
-        "inline-flex min-w-[6.5rem] items-center justify-center gap-1.5 rounded-full px-2.5 py-1.5 text-[0.68rem] font-semibold",
+        "inline-flex min-w-[7.75rem] items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[0.68rem] font-semibold leading-none",
         status === "ACTIVE" && "bg-success/12 text-success ring-1 ring-success/15",
         status === "PENDING" && "bg-warning/15 text-warning-foreground ring-1 ring-warning/20",
         status === "LOCKED" && "bg-destructive/10 text-destructive ring-1 ring-destructive/15",
@@ -793,7 +790,7 @@ function LastLoginCell({ value }: { value: string }) {
   return (
     <div
       className={joinClass(
-        "inline-flex min-w-[8.5rem] items-center gap-2 rounded-md px-2.5 py-1.5",
+        "inline-flex min-w-[8.75rem] items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-1.5",
         info.tone === "recent" && "bg-primary/10 text-primary",
         info.tone === "old" && "bg-muted text-foreground",
         info.tone === "idle" && "bg-muted text-muted-foreground",
@@ -807,9 +804,8 @@ function LastLoginCell({ value }: { value: string }) {
           info.tone === "idle" && "bg-border",
         )}
       />
-      <span className="min-w-0">
-        <span className="block text-xs font-semibold leading-tight">{info.label}</span>
-        <span className="block truncate text-[0.68rem] opacity-75">{info.detail}</span>
+      <span className="min-w-0" title={info.detail}>
+        <span className="block truncate text-xs font-semibold leading-tight">{info.label}</span>
       </span>
     </div>
   );
@@ -888,7 +884,7 @@ function AccountFormDialog({
               {account ? "Cập nhật tài khoản" : "Thêm tài khoản"}
             </h2>
             <p className="text-xs text-muted-foreground">
-              Dữ liệu sẽ được ghi trực tiếp qua API môi trường test.
+              Cập nhật thông tin truy cập cho người dùng.
             </p>
           </div>
           <button
