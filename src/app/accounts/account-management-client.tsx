@@ -101,6 +101,20 @@ const passwordRules = [
   "Có ký tự đặc biệt",
 ];
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type AccountFormField = "username" | "email" | "employeeId" | "roles" | "password";
+
+type AccountFormValues = {
+  username: string;
+  email: string;
+  employeeId: string;
+  password: string;
+  roles: string[];
+};
+
+type AccountFieldErrors = Partial<Record<AccountFormField, string>>;
+
 function joinClass(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -169,6 +183,62 @@ function validatePassword(password: string) {
   }
 
   return "";
+}
+
+function readAccountFormValues(form: HTMLFormElement): AccountFormValues {
+  const formData = new FormData(form);
+
+  return {
+    username: String(formData.get("username") ?? "").trim(),
+    email: String(formData.get("email") ?? "").trim(),
+    employeeId: String(formData.get("employeeId") ?? "").trim(),
+    password: String(formData.get("password") ?? "").trim(),
+    roles: formData.getAll("roles").map(String).filter(Boolean),
+  };
+}
+
+function validateAccountForm(values: AccountFormValues, isEditing: boolean): AccountFieldErrors {
+  const errors: AccountFieldErrors = {};
+
+  if (!values.username) {
+    errors.username = "Vui lòng nhập tên đăng nhập.";
+  } else if (values.username.length < 3) {
+    errors.username = "Tên đăng nhập cần có ít nhất 3 ký tự.";
+  } else if (/\s/.test(values.username)) {
+    errors.username = "Tên đăng nhập không được chứa khoảng trắng.";
+  }
+
+  if (!values.email) {
+    errors.email = "Vui lòng nhập email.";
+  } else if (!emailPattern.test(values.email)) {
+    errors.email = "Email chưa đúng định dạng.";
+  }
+
+  if (!isEditing) {
+    const employeeId = Number(values.employeeId);
+
+    if (!values.employeeId) {
+      errors.employeeId = "Vui lòng nhập ID hồ sơ nhân viên.";
+    } else if (!Number.isInteger(employeeId) || employeeId <= 0) {
+      errors.employeeId = "ID hồ sơ nhân viên phải là số nguyên dương.";
+    }
+
+    const passwordError = validatePassword(values.password);
+
+    if (passwordError) {
+      errors.password = passwordError;
+    }
+  }
+
+  if (values.roles.length === 0) {
+    errors.roles = "Vui lòng chọn ít nhất một vai trò.";
+  }
+
+  return errors;
+}
+
+function hasFieldErrors(errors: AccountFieldErrors) {
+  return Object.values(errors).some(Boolean);
 }
 
 function resolveAccountSaveMessage(error: unknown, isEditing: boolean) {
@@ -870,53 +940,50 @@ function AccountFormDialog({
   onSubmit: (payload: AccountFormPayload) => Promise<void>;
 }) {
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<AccountFieldErrors>({});
 
   if (!isOpen) {
     return null;
   }
 
+  const isEditing = Boolean(account);
+
+  function validateField(form: HTMLFormElement | null, field: AccountFormField) {
+    if (!form) {
+      return;
+    }
+
+    const nextErrors = validateAccountForm(readAccountFormValues(form), isEditing);
+    setFieldErrors((current) => ({ ...current, [field]: nextErrors[field] }));
+    setFormError("");
+  }
+
+  function refreshFieldIfInvalid(form: HTMLFormElement | null, field: AccountFormField) {
+    if (fieldErrors[field]) {
+      validateField(form, field);
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const username = String(formData.get("username") ?? "").trim();
-    const email = String(formData.get("email") ?? "").trim();
-    const employeeId = String(formData.get("employeeId") ?? "").trim();
-    const password = String(formData.get("password") ?? "").trim();
-    const roles = formData.getAll("roles").map(String).filter(Boolean);
+    const values = readAccountFormValues(event.currentTarget);
+    const nextErrors = validateAccountForm(values, isEditing);
 
     setFormError("");
+    setFieldErrors(nextErrors);
 
-    if (!username || !email) {
-      setFormError("Vui lòng nhập tên đăng nhập và email.");
+    if (hasFieldErrors(nextErrors)) {
+      setFormError("Vui lòng kiểm tra lại các trường được đánh dấu.");
       return;
-    }
-
-    if (!account && !employeeId) {
-      setFormError("Vui lòng nhập ID hồ sơ nhân viên.");
-      return;
-    }
-
-    if (roles.length === 0) {
-      setFormError("Vui lòng chọn ít nhất một vai trò.");
-      return;
-    }
-
-    if (!account) {
-      const passwordError = validatePassword(password);
-
-      if (passwordError) {
-        setFormError(passwordError);
-        return;
-      }
     }
 
     void onSubmit({
-      username,
-      email,
-      employeeId,
-      password: password || undefined,
+      username: values.username,
+      email: values.email,
+      employeeId: values.employeeId,
+      password: values.password || undefined,
       status: account?.status ?? "ACTIVE",
-      roles,
+      roles: values.roles,
     });
   }
 
@@ -948,44 +1015,103 @@ function AccountFormDialog({
               {formError}
             </div>
           ) : null}
-          <label className="space-y-1.5">
+          <label className="space-y-1.5" htmlFor="account-username">
             <span className="text-sm font-medium">Tên đăng nhập</span>
             <input
+              id="account-username"
               name="username"
               defaultValue={account?.username}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+              aria-invalid={Boolean(fieldErrors.username)}
+              aria-describedby={fieldErrors.username ? "account-username-error" : undefined}
+              onBlur={(event) => validateField(event.currentTarget.form, "username")}
+              onInput={(event) => refreshFieldIfInvalid(event.currentTarget.form, "username")}
+              className={joinClass(
+                "h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:ring-1",
+                fieldErrors.username
+                  ? "border-destructive focus:border-destructive focus:ring-destructive/25"
+                  : "border-input focus:border-ring focus:ring-ring",
+              )}
             />
+            {fieldErrors.username ? (
+              <span id="account-username-error" className="block text-xs font-medium text-destructive">
+                {fieldErrors.username}
+              </span>
+            ) : null}
           </label>
-          <label className="space-y-1.5">
+          <label className="space-y-1.5" htmlFor="account-email">
             <span className="text-sm font-medium">Email</span>
             <input
+              id="account-email"
               name="email"
               type="email"
               defaultValue={account?.email}
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? "account-email-error" : undefined}
+              onBlur={(event) => validateField(event.currentTarget.form, "email")}
+              onInput={(event) => refreshFieldIfInvalid(event.currentTarget.form, "email")}
+              className={joinClass(
+                "h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:ring-1",
+                fieldErrors.email
+                  ? "border-destructive focus:border-destructive focus:ring-destructive/25"
+                  : "border-input focus:border-ring focus:ring-ring",
+              )}
             />
+            {fieldErrors.email ? (
+              <span id="account-email-error" className="block text-xs font-medium text-destructive">
+                {fieldErrors.email}
+              </span>
+            ) : null}
           </label>
-          <label className="space-y-1.5 sm:col-span-2">
+          <label className="space-y-1.5 sm:col-span-2" htmlFor="account-employee-id">
             <span className="text-sm font-medium">ID hồ sơ nhân viên</span>
             <input
+              id="account-employee-id"
               name="employeeId"
+              inputMode="numeric"
               readOnly={Boolean(account)}
               defaultValue={account?.employeeId}
               placeholder="Ví dụ: 4"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+              aria-invalid={Boolean(fieldErrors.employeeId)}
+              aria-describedby={
+                fieldErrors.employeeId ? "account-employee-id-error" : "account-employee-id-help"
+              }
+              onBlur={(event) => validateField(event.currentTarget.form, "employeeId")}
+              onInput={(event) => refreshFieldIfInvalid(event.currentTarget.form, "employeeId")}
+              className={joinClass(
+                "h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:ring-1",
+                fieldErrors.employeeId
+                  ? "border-destructive focus:border-destructive focus:ring-destructive/25"
+                  : "border-input focus:border-ring focus:ring-ring",
+              )}
             />
-            <span className="block text-xs text-muted-foreground">
-              Tạo tài khoản cần dùng ID hồ sơ nhân viên đã tồn tại trong hệ thống.
-            </span>
+            {fieldErrors.employeeId ? (
+              <span id="account-employee-id-error" className="block text-xs font-medium text-destructive">
+                {fieldErrors.employeeId}
+              </span>
+            ) : (
+              <span id="account-employee-id-help" className="block text-xs text-muted-foreground">
+                Tạo tài khoản cần dùng ID hồ sơ nhân viên đã tồn tại trong hệ thống.
+              </span>
+            )}
           </label>
-          <label className="space-y-1.5">
+          <label className="space-y-1.5" htmlFor="account-roles">
             <span className="text-sm font-medium">Vai trò</span>
             <select
+              id="account-roles"
               name="roles"
               multiple
               size={4}
               defaultValue={account?.roles.length ? account.roles : ["EMPLOYEE"]}
-              className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+              aria-invalid={Boolean(fieldErrors.roles)}
+              aria-describedby={fieldErrors.roles ? "account-roles-error" : "account-roles-help"}
+              onBlur={(event) => validateField(event.currentTarget.form, "roles")}
+              onChange={(event) => validateField(event.currentTarget.form, "roles")}
+              className={joinClass(
+                "min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none transition focus:ring-1",
+                fieldErrors.roles
+                  ? "border-destructive focus:border-destructive focus:ring-destructive/25"
+                  : "border-input focus:border-ring focus:ring-ring",
+              )}
             >
               {roleOptions.map((role) => (
                 <option key={role.value} value={role.value}>
@@ -993,23 +1119,45 @@ function AccountFormDialog({
                 </option>
               ))}
             </select>
-            <span className="block text-xs text-muted-foreground">
-              Giữ Ctrl để chọn nhiều vai trò nếu cần.
-            </span>
+            {fieldErrors.roles ? (
+              <span id="account-roles-error" className="block text-xs font-medium text-destructive">
+                {fieldErrors.roles}
+              </span>
+            ) : (
+              <span id="account-roles-help" className="block text-xs text-muted-foreground">
+                Giữ Ctrl để chọn nhiều vai trò nếu cần.
+              </span>
+            )}
           </label>
           {!account ? (
-            <label className="space-y-1.5 sm:col-span-2">
+            <label className="space-y-1.5 sm:col-span-2" htmlFor="account-password">
               <span className="text-sm font-medium">Mật khẩu</span>
               <input
+                id="account-password"
                 name="password"
                 type="password"
                 autoComplete="new-password"
                 placeholder="Ví dụ: Password@123"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring"
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? "account-password-error" : "account-password-help"}
+                onBlur={(event) => validateField(event.currentTarget.form, "password")}
+                onInput={(event) => refreshFieldIfInvalid(event.currentTarget.form, "password")}
+                className={joinClass(
+                  "h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:ring-1",
+                  fieldErrors.password
+                    ? "border-destructive focus:border-destructive focus:ring-destructive/25"
+                    : "border-input focus:border-ring focus:ring-ring",
+                )}
               />
-              <span className="block text-xs text-muted-foreground">
-                {passwordRules.join(" • ")}
-              </span>
+              {fieldErrors.password ? (
+                <span id="account-password-error" className="block text-xs font-medium text-destructive">
+                  {fieldErrors.password}
+                </span>
+              ) : (
+                <span id="account-password-help" className="block text-xs text-muted-foreground">
+                  {passwordRules.join(" • ")}
+                </span>
+              )}
             </label>
           ) : null}
 
