@@ -33,6 +33,8 @@ function pickToken(response: LoginResponse, keys: string[]) {
 }
 
 export async function loginWithApi(payload: LoginPayload) {
+  logoutClientSide();
+
   const response = await apiRequest<LoginResponse>("/auth/login", {
     method: "POST",
     auth: false,

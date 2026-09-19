@@ -13,6 +13,22 @@ import { FormEvent, useState } from "react";
 
 import { loginWithApi, type LoginPayload } from "@/lib/auth";
 
+function resolveLoginMessage(error: unknown) {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+
+    if (message.includes("khóa") || message.includes("locked")) {
+      return "Tài khoản đang bị khóa. Vui lòng liên hệ quản trị viên.";
+    }
+
+    if (message.includes("vô hiệu") || message.includes("disabled")) {
+      return "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.";
+    }
+  }
+
+  return "Tên đăng nhập/email hoặc mật khẩu không đúng.";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
@@ -36,11 +52,7 @@ export default function LoginPage() {
       setMessage("Đăng nhập thành công. Đang chuyển tới hệ thống...");
       router.push("/accounts");
     } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Thông tin đăng nhập không hợp lệ hoặc tài khoản không được phép đăng nhập.",
-      );
+      setMessage(resolveLoginMessage(error));
     } finally {
       setIsSubmitting(false);
     }
