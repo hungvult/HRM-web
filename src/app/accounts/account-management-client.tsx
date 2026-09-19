@@ -30,6 +30,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { ApiError } from "@/lib/api";
 import {
   Account,
   AccountFormPayload,
@@ -170,6 +171,54 @@ function validatePassword(password: string) {
   return "";
 }
 
+function resolveAccountSaveMessage(error: unknown, isEditing: boolean) {
+  if (!(error instanceof ApiError)) {
+    return "Không thể lưu tài khoản. Vui lòng kiểm tra thông tin và thử lại.";
+  }
+
+  if (error.status === 400) {
+    return "Thông tin tài khoản chưa hợp lệ. Vui lòng kiểm tra lại các trường đã nhập.";
+  }
+
+  if (error.status === 401) {
+    return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+  }
+
+  if (error.status === 403) {
+    return "Tài khoản hiện tại không có quyền thực hiện thao tác này.";
+  }
+
+  if (error.status === 404) {
+    return isEditing
+      ? "Không tìm thấy tài khoản cần cập nhật."
+      : "Không tìm thấy hồ sơ nhân viên. Hãy nhập đúng ID hồ sơ nhân viên đã tồn tại.";
+  }
+
+  if (error.status === 409) {
+    return "Tên đăng nhập, email hoặc hồ sơ nhân viên này đã được dùng cho tài khoản khác.";
+  }
+
+  return "Không thể lưu tài khoản. Vui lòng thử lại sau.";
+}
+
+function resolveStatusUpdateMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+    }
+
+    if (error.status === 403) {
+      return "Tài khoản hiện tại không có quyền cập nhật trạng thái.";
+    }
+
+    if (error.status === 404) {
+      return "Không tìm thấy tài khoản cần cập nhật trạng thái.";
+    }
+  }
+
+  return "Không thể cập nhật trạng thái tài khoản. Vui lòng thử lại.";
+}
+
 export default function AccountManagementPage() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -290,8 +339,8 @@ export default function AccountManagementPage() {
 
       setFormOpen(false);
       setEditingAccount(null);
-    } catch {
-      setNotice("Không thể lưu tài khoản. Vui lòng kiểm tra thông tin và thử lại.");
+    } catch (apiError) {
+      setNotice(resolveAccountSaveMessage(apiError, Boolean(editingAccount)));
     } finally {
       setIsSaving(false);
     }
@@ -308,8 +357,8 @@ export default function AccountManagementPage() {
           ? `Đã khóa tài khoản ${account.username || account.email}.`
           : `Đã mở khóa tài khoản ${account.username || account.email}.`,
       );
-    } catch {
-      setNotice("Không thể cập nhật trạng thái tài khoản. Vui lòng thử lại.");
+    } catch (apiError) {
+      setNotice(resolveStatusUpdateMessage(apiError));
     }
   }
 
