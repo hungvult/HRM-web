@@ -265,7 +265,7 @@ function resolveAccountSaveMessage(error: unknown, isEditing: boolean) {
   }
 
   if (error.status === 409) {
-    return "Tên đăng nhập, email hoặc hồ sơ nhân viên này đã được dùng cho tài khoản khác.";
+    return error.message.trim() || "Tên đăng nhập, email hoặc hồ sơ nhân viên này đã được dùng cho tài khoản khác.";
   }
 
   return "Không thể lưu tài khoản. Vui lòng thử lại sau.";
@@ -410,7 +410,10 @@ export default function AccountManagementPage() {
       setFormOpen(false);
       setEditingAccount(null);
     } catch (apiError) {
-      setNotice(resolveAccountSaveMessage(apiError, Boolean(editingAccount)));
+      const message = resolveAccountSaveMessage(apiError, Boolean(editingAccount));
+
+      setNotice(message);
+      throw new Error(message);
     } finally {
       setIsSaving(false);
     }
@@ -964,6 +967,24 @@ function AccountFormDialog({
     }
   }
 
+  function applySubmitError(message: string) {
+    setFormError(message);
+
+    if (/email/i.test(message)) {
+      setFieldErrors((current) => ({ ...current, email: message }));
+      return;
+    }
+
+    if (/tên đăng nhập|username/i.test(message)) {
+      setFieldErrors((current) => ({ ...current, username: message }));
+      return;
+    }
+
+    if (/hồ sơ nhân viên|employee/i.test(message)) {
+      setFieldErrors((current) => ({ ...current, employeeId: message }));
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = readAccountFormValues(event.currentTarget);
@@ -977,14 +998,24 @@ function AccountFormDialog({
       return;
     }
 
-    void onSubmit({
-      username: values.username,
-      email: values.email,
-      employeeId: values.employeeId,
-      password: values.password || undefined,
-      status: account?.status ?? "ACTIVE",
-      roles: values.roles,
-    });
+    void (async () => {
+      try {
+        await onSubmit({
+          username: values.username,
+          email: values.email,
+          employeeId: values.employeeId,
+          password: values.password || undefined,
+          status: account?.status ?? "ACTIVE",
+          roles: values.roles,
+        });
+      } catch (submitError) {
+        applySubmitError(
+          submitError instanceof Error
+            ? submitError.message
+            : "Không thể lưu tài khoản. Vui lòng kiểm tra thông tin và thử lại.",
+        );
+      }
+    })();
   }
 
   return (
