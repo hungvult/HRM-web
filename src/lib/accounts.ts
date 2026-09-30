@@ -126,7 +126,13 @@ function normalizeRoles(value: unknown) {
 }
 
 function normalizeSearchText(value: string) {
-  return value.trim().toLocaleLowerCase("vi");
+  return value
+    .trim()
+    .toLocaleLowerCase("vi")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0111/g, "d")
+    .replace(/\s+/g, " ");
 }
 
 function accountMatchesKeyword(account: Account, keyword: string) {
@@ -177,10 +183,10 @@ function extractTotal(payload: unknown, rows: unknown[]) {
   const record = asRecord(payload);
   const data = asRecord(record?.data);
 
-  return (
-    readNumber(record, [["totalElements"], ["total"], ["totalItems"]], -1) ||
-    readNumber(data, [["totalElements"], ["total"], ["totalItems"]], -1) ||
-    rows.length
+  return readNumber(
+    record,
+    [["totalElements"], ["total"], ["totalItems"]],
+    readNumber(data, [["totalElements"], ["total"], ["totalItems"]], rows.length),
   );
 }
 
@@ -232,67 +238,74 @@ export function normalizeAccount(raw: unknown): Account {
   };
 }
 
+async function enrichAccountRows(rows: unknown[], signal?: AbortSignal) {
+  const accounts: Account[] = [];
+
+  // The list omits employee names; load details in bounded batches before searching.
+  for (let start = 0; start < rows.length; start += 10) {
+    signal?.throwIfAborted();
+    const batch = await Promise.all(rows.slice(start, start + 10).map(async (row) => {
+      const account = normalizeAccount(row);
+      try {
+        const detail = await apiRequest<unknown>(`/accounts/${encodeURIComponent(account.id)}`, { signal });
+        return normalizeAccount({ ...asRecord(row), ...asRecord(detail) });
+      } catch {
+        signal?.throwIfAborted();
+        return account;
+      }
+    }));
+    accounts.push(...batch);
+  }
+
+  signal?.throwIfAborted();
+  return accounts;
+}
+
 export async function fetchUserAccounts(params: AccountListParams, signal?: AbortSignal) {
   const keyword = params.keyword?.trim() ?? "";
+  const requestedPage = Math.max(params.page ?? 1, 1);
+  const requestedSize = params.size ?? 10;
   const query = new URLSearchParams();
-
-  if (keyword) {
-    query.set("keyword", keyword);
-  }
 
   if (params.status) {
     query.set("status", params.status);
   }
 
-  query.set("page", String(Math.max((params.page ?? 1) - 1, 0)));
-  query.set("size", String(params.size ?? 10));
-
-  const payload = await apiRequest<unknown>(`/accounts?${query.toString()}`, { signal });
-  const rows = extractRows(payload);
-  let accounts = rows.map(normalizeAccount);
-  let total = extractTotal(payload, rows);
+  query.set("size", String(keyword ? 100 : requestedSize));
 
   if (keyword) {
-    accounts = accounts.filter((account) => accountMatchesKeyword(account, keyword));
-    total = accounts.length;
+    const matches: Account[] = [];
+    let loaded = 0;
 
-    if (accounts.length === 0) {
-      const fallbackQuery = new URLSearchParams();
+    // The API searches only username/email, so scan all pages for names and codes.
+    for (let apiPage = 0; ; apiPage += 1) {
+      signal?.throwIfAborted();
+      query.set("page", String(apiPage));
+      const payload = await apiRequest<unknown>(`/accounts?${query.toString()}`, { signal });
+      const rows = extractRows(payload);
+      const accounts = await enrichAccountRows(rows, signal);
+      matches.push(...accounts.filter((account) => accountMatchesKeyword(account, keyword)));
+      loaded += rows.length;
 
-      if (params.status) {
-        fallbackQuery.set("status", params.status);
+      if (rows.length === 0 || loaded >= extractTotal(payload, rows)) {
+        break;
       }
-
-      fallbackQuery.set("page", "0");
-      fallbackQuery.set("size", "1000");
-
-      const fallbackPayload = await apiRequest<unknown>(`/accounts?${fallbackQuery.toString()}`, { signal });
-      const fallbackRows = extractRows(fallbackPayload);
-      const fallbackAccounts = fallbackRows
-        .map(normalizeAccount)
-        .filter((account) => accountMatchesKeyword(account, keyword));
-      const requestedPage = Math.max(params.page ?? 1, 1);
-      const requestedSize = params.size ?? 10;
-      const start = (requestedPage - 1) * requestedSize;
-
-      accounts = fallbackAccounts.slice(start, start + requestedSize);
-      total = fallbackAccounts.length;
     }
+
+    const start = (requestedPage - 1) * requestedSize;
+    return {
+      items: matches.slice(start, start + requestedSize),
+      total: matches.length,
+    } satisfies AccountListResult;
   }
 
-  const enriched = await Promise.all(
-    accounts.map(async (account) => {
-      try {
-        return await fetchUserAccount(account.id, signal);
-      } catch {
-        return account;
-      }
-    }),
-  );
+  query.set("page", String(requestedPage - 1));
+  const payload = await apiRequest<unknown>(`/accounts?${query.toString()}`, { signal });
+  const rows = extractRows(payload);
 
   return {
-    items: enriched,
-    total,
+    items: await enrichAccountRows(rows, signal),
+    total: extractTotal(payload, rows),
   } satisfies AccountListResult;
 }
 

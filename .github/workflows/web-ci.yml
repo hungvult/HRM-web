@@ -40,5 +40,8 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+      - name: Test account search
+        run: npm run test:accounts
+
       - name: Build application
         run: npm run build
