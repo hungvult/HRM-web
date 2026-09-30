@@ -125,6 +125,25 @@ function normalizeRoles(value: unknown) {
     .filter(Boolean);
 }
 
+function normalizeSearchText(value: string) {
+  return value.trim().toLocaleLowerCase("vi");
+}
+
+function accountMatchesKeyword(account: Account, keyword: string) {
+  const normalizedKeyword = normalizeSearchText(keyword);
+
+  if (!normalizedKeyword) {
+    return true;
+  }
+
+  return [
+    account.username,
+    account.email,
+    account.employeeCode,
+    account.fullName,
+  ].some((value) => normalizeSearchText(value).includes(normalizedKeyword));
+}
+
 function extractRows(payload: unknown) {
   if (Array.isArray(payload)) {
     return payload;
@@ -214,10 +233,11 @@ export function normalizeAccount(raw: unknown): Account {
 }
 
 export async function fetchUserAccounts(params: AccountListParams, signal?: AbortSignal) {
+  const keyword = params.keyword?.trim() ?? "";
   const query = new URLSearchParams();
 
-  if (params.keyword?.trim()) {
-    query.set("keyword", params.keyword.trim());
+  if (keyword) {
+    query.set("keyword", keyword);
   }
 
   if (params.status) {
@@ -229,7 +249,37 @@ export async function fetchUserAccounts(params: AccountListParams, signal?: Abor
 
   const payload = await apiRequest<unknown>(`/accounts?${query.toString()}`, { signal });
   const rows = extractRows(payload);
-  const accounts = rows.map(normalizeAccount);
+  let accounts = rows.map(normalizeAccount);
+  let total = extractTotal(payload, rows);
+
+  if (keyword) {
+    accounts = accounts.filter((account) => accountMatchesKeyword(account, keyword));
+    total = accounts.length;
+
+    if (accounts.length === 0) {
+      const fallbackQuery = new URLSearchParams();
+
+      if (params.status) {
+        fallbackQuery.set("status", params.status);
+      }
+
+      fallbackQuery.set("page", "0");
+      fallbackQuery.set("size", "1000");
+
+      const fallbackPayload = await apiRequest<unknown>(`/accounts?${fallbackQuery.toString()}`, { signal });
+      const fallbackRows = extractRows(fallbackPayload);
+      const fallbackAccounts = fallbackRows
+        .map(normalizeAccount)
+        .filter((account) => accountMatchesKeyword(account, keyword));
+      const requestedPage = Math.max(params.page ?? 1, 1);
+      const requestedSize = params.size ?? 10;
+      const start = (requestedPage - 1) * requestedSize;
+
+      accounts = fallbackAccounts.slice(start, start + requestedSize);
+      total = fallbackAccounts.length;
+    }
+  }
+
   const enriched = await Promise.all(
     accounts.map(async (account) => {
       try {
@@ -242,7 +292,7 @@ export async function fetchUserAccounts(params: AccountListParams, signal?: Abor
 
   return {
     items: enriched,
-    total: extractTotal(payload, rows),
+    total,
   } satisfies AccountListResult;
 }
 
