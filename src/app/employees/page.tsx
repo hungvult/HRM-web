@@ -36,8 +36,22 @@ import {
 } from "@/lib/hrm-api";
 import { downloadCsv, formatDate } from "@/lib/hrm-format";
 import { useApiResource } from "@/lib/use-api-resource";
+import {
+  focusFirstError,
+  validateForm,
+  type FormErrors,
+} from "@/lib/form-validation";
 
 type Mode = "create" | "edit" | "view" | "status";
+const fieldLabels = {
+  fullName: "Họ tên",
+  email: "Email",
+  phone: "Số điện thoại",
+  hireDate: "Ngày vào làm",
+  dateOfBirth: "Ngày sinh",
+  address: "Địa chỉ",
+  reason: "Lý do thay đổi",
+};
 const blank: EmployeeRecord = {
   id: 0,
   employeeCode: "",
@@ -79,6 +93,7 @@ export default function EmployeeManagementPage() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [notice, setNotice] = useState("");
   const load = useCallback(
     (signal: AbortSignal) =>
@@ -115,6 +130,7 @@ export default function EmployeeManagementPage() {
     ? (detail.data ?? dialog?.item ?? blank)
     : (dialog?.item ?? blank);
   function open(mode: Mode, employee = blank) {
+    setFieldErrors({});
     setFormError("");
     setNotice("");
     setDialog({ mode, item: employee });
@@ -122,6 +138,7 @@ export default function EmployeeManagementPage() {
   function close() {
     if (!saving) {
       setDialog(null);
+      setFieldErrors({});
       setFormError("");
     }
   }
@@ -133,6 +150,13 @@ export default function EmployeeManagementPage() {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!dialog || saving || !allowed || dialog.mode === "view") return;
+    const errors = validateForm(event.currentTarget, fieldLabels);
+    setFieldErrors(errors);
+    setFormError("");
+    if (Object.keys(errors).length) {
+      focusFirstError(event.currentTarget, errors);
+      return;
+    }
     const form = new FormData(event.currentTarget);
     setFormError("");
     const text = (key: string) => String(form.get(key) ?? "").trim();
@@ -404,7 +428,18 @@ export default function EmployeeManagementPage() {
           ) : needsDetail && detail.error ? (
             <ApiFeedback error={detail.error} onRetry={detail.reload} />
           ) : (
-            <form onSubmit={save} className="space-y-4">
+            <form
+              noValidate
+              onSubmit={save}
+              onInputCapture={(event) => {
+                const name = (event.target as HTMLInputElement).name;
+                if (fieldErrors[name])
+                  setFieldErrors(
+                    validateForm(event.currentTarget, fieldLabels),
+                  );
+              }}
+              className="space-y-4"
+            >
               <ApiFeedback error={formError} />
               <fieldset
                 disabled={saving || dialog.mode === "view"}
@@ -430,7 +465,10 @@ export default function EmployeeManagementPage() {
                         )}
                       </select>
                     </FormField>
-                    <FormField label="Lý do thay đổi">
+                    <FormField
+                      label="Lý do thay đổi"
+                      error={fieldErrors.reason}
+                    >
                       <textarea
                         name="reason"
                         maxLength={2000}
@@ -459,7 +497,11 @@ export default function EmployeeManagementPage() {
                         ["address", "Địa chỉ", "text", 2000],
                       ] as const
                     ).map(([key, label, type, limit]) => (
-                      <FormField key={key} label={label}>
+                      <FormField
+                        key={key}
+                        label={label}
+                        error={fieldErrors[key]}
+                      >
                         <input
                           name={key}
                           type={type}
