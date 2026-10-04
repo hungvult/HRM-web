@@ -361,17 +361,47 @@ export function Drawer({
 export function FormField({
   label,
   children,
+  error,
 }: {
   label: string;
   children: ReactNode;
+  error?: string;
 }) {
   const id = useId();
   return (
     <div className="grid min-w-0 gap-1.5 text-sm font-medium">
       <label htmlFor={id}>{label}</label>
       {isValidElement(children)
-        ? cloneElement(children as ReactElement<{ id?: string }>, { id })
+        ? cloneElement(
+            children as ReactElement<{
+              id?: string;
+              className?: string;
+              "aria-invalid"?: boolean;
+              "aria-describedby"?: string;
+            }>,
+            {
+              id,
+              ...(error
+                ? {
+                    "aria-invalid": true,
+                    "aria-describedby": id + "-error",
+                    className:
+                        ((children.props as { className?: string }).className ?? "") +
+                      " aria-invalid:border-destructive aria-invalid:focus:ring-destructive/25",
+                  }
+                : {}),
+            },
+          )
         : children}
+      {error && (
+        <p
+          id={id + "-error"}
+          role="alert"
+          className="text-xs font-medium text-destructive"
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }
