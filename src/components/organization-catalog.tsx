@@ -39,6 +39,11 @@ import {
 } from "@/lib/hrm-api";
 import { formatDate } from "@/lib/hrm-format";
 import { useApiResource } from "@/lib/use-api-resource";
+import {
+  focusFirstError,
+  validateForm,
+  type FormErrors,
+} from "@/lib/form-validation";
 
 type Mode = "create" | "edit" | "view" | "status";
 const blank: CatalogRecord = {
@@ -53,12 +58,21 @@ const blank: CatalogRecord = {
 };
 export default function OrganizationCatalog({
   kind,
+  localizeValidation = false,
 }: {
   kind: "department" | "position";
+  localizeValidation?: boolean;
 }) {
   const isDepartment = kind === "department";
   const path = isDepartment ? "departments" : "positions";
   const noun = isDepartment ? "phòng ban" : "chức vụ";
+  const fieldLabels = {
+    code: "Mã " + noun,
+    name: "Tên " + noun,
+    rankLevel: "Cấp bậc chức vụ",
+    description: "Mô tả",
+    reason: "Lý do thay đổi",
+  };
   const session = useApiResource(fetchMyProfile);
   const allowed = canManageHrm(session.data);
   const [query, setQuery] = useState("");
@@ -71,6 +85,7 @@ export default function OrganizationCatalog({
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [notice, setNotice] = useState("");
   const load = useCallback(
     (signal: AbortSignal) =>
@@ -131,6 +146,7 @@ export default function OrganizationCatalog({
       ? "Bạn không có quyền quản lý danh mục."
       : resource.error || stats.error);
   function open(mode: Mode, item = blank) {
+    setFieldErrors({});
     setError("");
     setNotice("");
     setDialog({ mode, item });
@@ -138,6 +154,7 @@ export default function OrganizationCatalog({
   function close() {
     if (!saving) {
       setDialog(null);
+      setFieldErrors({});
       setError("");
     }
   }
@@ -149,6 +166,15 @@ export default function OrganizationCatalog({
     event.preventDefault();
     if (!dialog || saving || !allowed || dialog.mode === "view") return;
     if (needsDetail && (detail.loading || detail.error || !detail.data)) return;
+    const errors = localizeValidation
+      ? validateForm(event.currentTarget, fieldLabels)
+      : {};
+    setFieldErrors(errors);
+    setError("");
+    if (Object.keys(errors).length) {
+      focusFirstError(event.currentTarget, errors);
+      return;
+    }
     const form = new FormData(event.currentTarget);
     setError("");
     setSaving(true);
@@ -377,6 +403,14 @@ export default function OrganizationCatalog({
             <ApiFeedback error={detail.error} onRetry={detail.reload} />
           ) : (
             <form
+              noValidate={localizeValidation}
+              onInputCapture={(event) => {
+                const name = (event.target as HTMLInputElement).name;
+                if (localizeValidation && fieldErrors[name])
+                  setFieldErrors(
+                    validateForm(event.currentTarget, fieldLabels),
+                  );
+              }}
               key={`${kind}-${dialog.mode}-${item.id}`}
               onSubmit={save}
               className="space-y-4"
@@ -391,7 +425,10 @@ export default function OrganizationCatalog({
                     <p className="font-medium">
                       {item.name} · {item.code}
                     </p>
-                    <FormField label="Lý do thay đổi">
+                    <FormField
+                      label="Lý do thay đổi"
+                      error={fieldErrors.reason}
+                    >
                       <textarea
                         name="reason"
                         maxLength={1000}
@@ -402,7 +439,7 @@ export default function OrganizationCatalog({
                 ) : (
                   <>
                     <div className="grid gap-4 sm:grid-cols-2">
-                      <FormField label="Mã">
+                      <FormField label="Mã" error={fieldErrors.code}>
                         <input
                           name="code"
                           readOnly={!isDepartment || dialog.mode !== "create"}
@@ -415,7 +452,7 @@ export default function OrganizationCatalog({
                           }
                         />
                       </FormField>
-                      <FormField label="Tên">
+                      <FormField label="Tên" error={fieldErrors.name}>
                         <input
                           name="name"
                           required
@@ -426,7 +463,10 @@ export default function OrganizationCatalog({
                       </FormField>
                     </div>
                     {!isDepartment && (
-                      <FormField label="Cấp bậc chức vụ">
+                      <FormField
+                        label="Cấp bậc chức vụ"
+                        error={fieldErrors.rankLevel}
+                      >
                         <input
                           name="rankLevel"
                           type="number"
@@ -439,7 +479,7 @@ export default function OrganizationCatalog({
                         />
                       </FormField>
                     )}
-                    <FormField label="Mô tả">
+                    <FormField label="Mô tả" error={fieldErrors.description}>
                       <textarea
                         name="description"
                         maxLength={10000}
