@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:hrm": "node --test tests/hrm-api.test.mjs tests/hrm-proxy.test.mjs"
+    "test:hrm": "node --test tests/hrm-api.test.mjs tests/hrm-proxy.test.mjs tests/form-validation.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.45.0",
