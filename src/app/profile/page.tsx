@@ -15,6 +15,11 @@ import {
 } from "@/lib/hrm-api";
 import { formatDate } from "@/lib/hrm-format";
 import { useApiResource } from "@/lib/use-api-resource";
+import {
+  focusFirstError,
+  validateForm,
+  type FormErrors,
+} from "@/lib/form-validation";
 
 export default function MyProfilePage() {
   const resource = useApiResource(fetchMyProfile);
@@ -24,6 +29,7 @@ export default function MyProfilePage() {
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [notice, setNotice] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
   const values = draft ?? {
@@ -57,14 +63,18 @@ export default function MyProfilePage() {
     event.preventDefault();
     if (!dirty || saving || resource.loading || !profile) return;
     const next = { phone: values.phone.trim(), address: values.address.trim() };
-    if (!/^\+?[0-9]{9,15}$/.test(next.phone)) {
-      setError(
-        "Số điện thoại phải gồm 9 đến 15 chữ số, có thể bắt đầu bằng dấu +.",
-      );
-      return;
+    const errors = validateForm(event.currentTarget, {
+      phone: "Số điện thoại",
+      address: "Địa chỉ hiện tại",
+    });
+    if (!errors.phone && !/^\+?[0-9]{9,15}$/.test(next.phone)) {
+      errors.phone =
+        "Số điện thoại phải gồm 9 đến 15 chữ số, có thể bắt đầu bằng dấu +.";
     }
-    if (!next.address || next.address.length > 1000) {
-      setError("Địa chỉ phải có từ 1 đến 1000 ký tự.");
+    setFieldErrors(errors);
+    setError("");
+    if (Object.keys(errors).length) {
+      focusFirstError(event.currentTarget, errors);
       return;
     }
     setError("");
@@ -107,6 +117,7 @@ export default function MyProfilePage() {
             <ApiFeedback error="Tài khoản chưa được liên kết với hồ sơ nhân viên." />
           )}
           <form
+            noValidate
             id="profile-form"
             onSubmit={save}
             className="min-w-0 overflow-hidden rounded-md border border-border bg-white shadow-sm"
@@ -128,7 +139,7 @@ export default function MyProfilePage() {
                   <input className={inputClass} value={value || "-"} disabled />
                 </FormField>
               ))}
-              <FormField label="Số điện thoại">
+              <FormField label="Số điện thoại" error={fieldErrors.phone}>
                 <input
                   name="phone"
                   type="tel"
@@ -142,11 +153,12 @@ export default function MyProfilePage() {
                     setDraft({ ...values, phone: event.target.value });
                     setNotice("");
                     setError("");
+                    setFieldErrors((current) => ({ ...current, phone: "" }));
                   }}
                 />
               </FormField>
               <div className="md:col-span-2 xl:col-span-3">
-                <FormField label="Địa chỉ hiện tại">
+                <FormField label="Địa chỉ hiện tại" error={fieldErrors.address}>
                   <textarea
                     name="address"
                     autoComplete="street-address"
@@ -159,6 +171,10 @@ export default function MyProfilePage() {
                       setDraft({ ...values, address: event.target.value });
                       setNotice("");
                       setError("");
+                      setFieldErrors((current) => ({
+                        ...current,
+                        address: "",
+                      }));
                     }}
                   />
                 </FormField>
@@ -173,6 +189,7 @@ export default function MyProfilePage() {
                 disabled={!dirty || saving}
                 onClick={() => {
                   setDraft(null);
+                  setFieldErrors({});
                   setNotice("");
                   setError("");
                 }}
