@@ -2,33 +2,14 @@
 
 import {
   BarChart3,
-  Bell,
-  BriefcaseBusiness,
-  Building2,
-  CalendarCheck,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsUpDown,
   Clock3,
-  IdCard,
-  LayoutDashboard,
   LoaderCircle,
-  LogOut,
-  MapPin,
-  Menu,
-  Pencil,
-  Plus,
-  RefreshCcw,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
-  UserRoundCog,
   Users,
-  WalletCards,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { ApiError } from "@/lib/api";
 import {
@@ -41,37 +22,18 @@ import {
   updateUserAccountRoles,
   updateUserAccountStatus,
 } from "@/lib/accounts";
-import { logoutClientSide } from "@/lib/auth";
+import HrmAppShell from "@/components/hrm-app-shell";
+import { fetchMyProfile } from "@/lib/hrm-api";
+import { useApiResource } from "@/lib/use-api-resource";
+import {
+  FilterBar,
+  ListCard,
+  RowActions,
+  StatisticSummary,
+  TableFooter,
+} from "@/components/hrm-ui";
 
 const pageSize = 8;
-
-const navGroups = [
-  {
-    label: "Quản trị",
-    items: [
-      { label: "Tổng quan", icon: LayoutDashboard },
-      { label: "Quản lý tài khoản", icon: UserRoundCog, active: true },
-    ],
-  },
-  {
-    label: "Nhân sự",
-    items: [
-      { label: "Hồ sơ nhân viên", icon: IdCard },
-      { label: "Phòng ban", icon: Building2 },
-      { label: "Chức vụ", icon: BriefcaseBusiness },
-      { label: "Phân công nhân viên", icon: Users },
-    ],
-  },
-  {
-    label: "Chấm công & lương",
-    items: [
-      { label: "Bảng công", icon: Clock3 },
-      { label: "Nghỉ phép", icon: CalendarCheck },
-      { label: "Bảng lương", icon: WalletCards },
-      { label: "Địa điểm làm việc", icon: MapPin },
-    ],
-  },
-];
 
 const statusCopy: Record<AccountStatus, string> = {
   ACTIVE: "Đang hoạt động",
@@ -265,7 +227,7 @@ function resolveAccountSaveMessage(error: unknown, isEditing: boolean) {
   }
 
   if (error.status === 409) {
-    return "Tên đăng nhập, email hoặc hồ sơ nhân viên này đã được dùng cho tài khoản khác.";
+    return error.message.trim() || "Tên đăng nhập, email hoặc hồ sơ nhân viên này đã được dùng cho tài khoản khác.";
   }
 
   return "Không thể lưu tài khoản. Vui lòng thử lại sau.";
@@ -290,8 +252,7 @@ function resolveStatusUpdateMessage(error: unknown) {
 }
 
 export default function AccountManagementPage() {
-  const router = useRouter();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const session = useApiResource(fetchMyProfile);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
@@ -306,7 +267,6 @@ export default function AccountManagementPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const allVisibleSelected =
     accounts.length > 0 && accounts.every((account) => selectedIds.includes(account.id));
 
@@ -410,7 +370,10 @@ export default function AccountManagementPage() {
       setFormOpen(false);
       setEditingAccount(null);
     } catch (apiError) {
-      setNotice(resolveAccountSaveMessage(apiError, Boolean(editingAccount)));
+      const message = resolveAccountSaveMessage(apiError, Boolean(editingAccount));
+
+      setNotice(message);
+      throw new Error(message);
     } finally {
       setIsSaving(false);
     }
@@ -432,418 +395,219 @@ export default function AccountManagementPage() {
     }
   }
 
-  function handleLogout() {
-    logoutClientSide();
-    router.push("/");
-  }
-
   return (
-    <div className="min-h-screen bg-background text-foreground lg:flex">
-      {sidebarOpen ? (
-        <button
-          type="button"
-          aria-label="Đóng menu"
-          className="fixed inset-0 z-30 bg-foreground/20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      ) : null}
+    <HrmAppShell
+      user={session.data}
+      activeLabel="Quản lý tài khoản"
+      title="Quản lý tài khoản"
+      description="Kiểm soát quyền truy cập, trạng thái và vai trò người dùng"
+      actionLabel="Thêm tài khoản"
+      onAction={openCreateForm}
+    >
+      <StatisticSummary items={stats} />
 
-      <aside
-        className={joinClass(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-border bg-white transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full",
-        )}
+      <ListCard
+        title="Danh sách tài khoản"
+        titleId="account-table-title"
+        description="Quản lý người dùng, vai trò và trạng thái truy cập"
+        actions={
+          <FilterBar
+            query={query}
+            onQuery={(value) => {
+              prepareFetch();
+              setQuery(value);
+              setPage(1);
+            }}
+            placeholder="Tìm kiếm tài khoản"
+            filters={[
+              {
+                label: "Mọi trạng thái",
+                value: status === "ALL" ? "" : statusCopy[status],
+                options: ["Đang hoạt động", "Đã khóa", "Vô hiệu hóa"],
+                onChange: (value) => {
+                  prepareFetch();
+                  setStatus(
+                    (Object.entries(statusCopy).find(
+                      ([, label]) => label === value,
+                    )?.[0] as AccountStatus) || "ALL",
+                  );
+                  setPage(1);
+                },
+              },
+            ]}
+            onReload={() => reloadAccounts("Đã tải lại danh sách tài khoản.")}
+          />
+        }
+        footer={
+          <TableFooter
+            total={total}
+            page={page}
+            pageSize={pageSize}
+            onPage={(number) => {
+              prepareFetch();
+              setPage(number);
+            }}
+          />
+        }
       >
-        <div className="flex h-20 shrink-0 items-center justify-between px-5">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-md bg-primary font-display text-base font-bold text-primary-foreground shadow-sm shadow-primary/20">
-              HR
+        {selectedIds.length > 0 ? (
+          <div className="flex items-center justify-between border-b border-border bg-accent/60 px-4 py-2 text-xs">
+            <span className="font-medium text-primary">
+              Đã chọn {selectedIds.length} tài khoản
             </span>
-            <div>
-              <p className="font-display text-base font-semibold">HRM</p>
-              <p className="text-[0.68rem] text-muted-foreground">Quản trị nhân sự</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted lg:hidden"
-            onClick={() => setSidebarOpen(false)}
-            aria-label="Đóng menu"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="mx-4 mb-5 flex items-center gap-3 rounded-md border border-border bg-accent/35 p-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-primary ring-1 ring-border">
-            QT
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">Quản trị hệ thống</p>
-            <p className="text-[0.68rem] text-muted-foreground">Admin</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Thông báo"
-            title="Thông báo"
-            className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            <Bell className="size-4" />
-            <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-destructive" />
-          </button>
-        </div>
-
-        <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4" aria-label="Điều hướng chính">
-          {navGroups.map((group) => (
-            <div key={group.label} className="mb-5">
-              <p className="mb-1.5 px-3 text-[0.65rem] font-semibold uppercase text-muted-foreground">
-                {group.label}
-              </p>
-              <div className="space-y-0.5">
-                {group.items.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    onClick={() => {
-                      setSidebarOpen(false);
-                      if (!item.active) setNotice("");
-                    }}
-                    className={joinClass(
-                      "flex h-9 w-full items-center gap-3 rounded-md px-3 text-left text-[0.82rem] font-medium transition-colors",
-                      item.active
-                        ? "bg-primary/12 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                  >
-                    <item.icon className="size-4 shrink-0" aria-hidden="true" />
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        <div className="shrink-0 border-t border-border p-3">
-          <button
-            type="button"
-            className="flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-destructive hover:bg-destructive/10"
-            onClick={handleLogout}
-          >
-            <LogOut className="size-4" />
-            Đăng xuất
-          </button>
-        </div>
-      </aside>
-
-      <main className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-sm sm:px-7">
-          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
-              className="grid size-9 place-items-center rounded-md border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground lg:hidden"
-              onClick={() => setSidebarOpen(true)}
-              aria-label="Mở menu"
+              className="rounded-md px-2 py-1 font-medium hover:bg-background"
+              onClick={() => setSelectedIds([])}
             >
-              <Menu className="size-4" />
+              Bỏ chọn
             </button>
-            <div className="min-w-0">
-              <p className="truncate font-display text-xl font-semibold sm:text-2xl">
-                Quản lý tài khoản
-              </p>
-              <p className="hidden text-xs text-muted-foreground sm:block">
-                Kiểm soát quyền truy cập, trạng thái và vai trò người dùng
-              </p>
-            </div>
           </div>
-          <button
-            type="button"
-            className="flex h-10 shrink-0 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm shadow-primary/20 transition hover:bg-primary/90"
-            onClick={openCreateForm}
-          >
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">Thêm tài khoản</span>
-          </button>
-        </header>
+        ) : null}
 
-        <div className="mx-auto max-w-[1500px] space-y-5 p-4 sm:p-7">
-          <section className="grid grid-cols-2 overflow-hidden rounded-md border border-border bg-white shadow-sm sm:grid-cols-4" aria-label="Thống kê tài khoản">
-            {stats.map((stat, index) => (
-              <div
-                key={stat.label}
-                className={joinClass(
-                  "flex items-start gap-3 px-4 py-4 sm:px-5",
-                  index % 2 !== 0 && "border-l border-border",
-                  index > 1 && "border-t border-border sm:border-t-0",
-                  index > 0 && "sm:border-l sm:border-border",
-                )}
-              >
-                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-                  <stat.icon className="size-4" />
-                </span>
-                <div>
-                  <p className="text-[0.7rem] text-muted-foreground">{stat.label}</p>
-                  <p className="font-display text-xl font-semibold">{stat.value}</p>
-                  <p className="hidden text-[0.68rem] text-muted-foreground sm:block">
-                    {stat.detail}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </section>
+        {error ? (
+          <div className="border-b border-border bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
 
-          <section aria-labelledby="account-table-title" className="overflow-hidden rounded-md border border-border bg-white shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h1 id="account-table-title" className="font-display text-lg font-semibold">
-                  Danh sách tài khoản
-                </h1>
-                <p className="text-xs text-muted-foreground">
-                  Quản lý người dùng, vai trò và trạng thái truy cập
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <label className="relative block sm:w-72">
-                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <span className="sr-only">Tìm kiếm tài khoản</span>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] table-fixed border-collapse text-left">
+            <thead>
+              <tr className="border-b border-border bg-muted/55 text-[0.68rem] uppercase text-muted-foreground">
+                <th className="w-12 px-4 py-3">
                   <input
-                    value={query}
-                    onChange={(event) => {
-                      prepareFetch();
-                      setQuery(event.target.value);
-                      setPage(1);
-                    }}
-                    placeholder="Tên, email hoặc mã nhân viên"
-                    className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none transition focus:border-ring focus:ring-1 focus:ring-ring"
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={togglePageSelection}
+                    aria-label="Chọn tất cả tài khoản trên trang"
+                    className="size-4 rounded border-input accent-primary"
                   />
-                </label>
-                <label className="relative">
-                  <span className="sr-only">Lọc trạng thái</span>
-                  <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <select
-                    value={status}
-                    onChange={(event) => {
-                      prepareFetch();
-                      setStatus(event.target.value as "ALL" | AccountStatus);
-                      setPage(1);
-                    }}
-                    className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-9 pr-9 text-sm outline-none focus:border-ring focus:ring-1 focus:ring-ring sm:w-44"
+                </th>
+                <th className="w-[260px] px-3 py-3 font-semibold">Nhân viên</th>
+                <th className="w-[250px] px-3 py-3 font-semibold">Tài khoản</th>
+                <th className="w-[170px] px-3 py-3 font-semibold">Vai trò</th>
+                <th className="w-[190px] px-3 py-3 font-semibold">Phòng ban</th>
+                <th className="w-[150px] px-3 py-3 font-semibold whitespace-nowrap">
+                  Trạng thái
+                </th>
+                <th className="w-[180px] px-3 py-3 font-semibold whitespace-nowrap">
+                  Hoạt động gần nhất
+                </th>
+                <th className="w-40 px-3 py-3 text-right font-semibold">
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="px-4 py-16 text-center text-sm text-muted-foreground"
                   >
-                    <option value="ALL">Mọi trạng thái</option>
-                    <option value="ACTIVE">Đang hoạt động</option>
-                    <option value="LOCKED">Đã khóa</option>
-                    <option value="DISABLED">Vô hiệu hóa</option>
-                  </select>
-                  <ChevronsUpDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                </label>
-                <button
-                  type="button"
-                  className="flex h-10 items-center justify-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                  onClick={() => reloadAccounts("Đã tải lại danh sách tài khoản.")}
-                >
-                  <RefreshCcw className="size-4" />
-                  Tải lại
-                </button>
-              </div>
-            </div>
+                    <LoaderCircle className="mx-auto mb-3 size-7 animate-spin" />
+                    Đang tải danh sách tài khoản...
+                  </td>
+                </tr>
+              ) : null}
 
-            {selectedIds.length > 0 ? (
-              <div className="flex items-center justify-between border-b border-border bg-accent/60 px-4 py-2 text-xs">
-                <span className="font-medium text-primary">Đã chọn {selectedIds.length} tài khoản</span>
-                <button
-                  type="button"
-                  className="rounded-md px-2 py-1 font-medium hover:bg-background"
-                  onClick={() => setSelectedIds([])}
-                >
-                  Bỏ chọn
-                </button>
-              </div>
-            ) : null}
+              {!isLoading && accounts.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-16 text-center">
+                    <Search className="mx-auto mb-3 size-7 text-muted-foreground" />
+                    <p className="font-semibold">Không tìm thấy tài khoản</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Thử đổi từ khóa hoặc bộ lọc trạng thái.
+                    </p>
+                  </td>
+                </tr>
+              ) : null}
 
-            {error ? (
-              <div className="border-b border-border bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {error}
-              </div>
-            ) : null}
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] table-fixed border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-border bg-muted/55 text-[0.68rem] uppercase text-muted-foreground">
-                    <th className="w-12 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={allVisibleSelected}
-                        onChange={togglePageSelection}
-                        aria-label="Chọn tất cả tài khoản trên trang"
-                        className="size-4 rounded border-input accent-primary"
-                      />
-                    </th>
-                    <th className="w-[260px] px-3 py-3 font-semibold">Nhân viên</th>
-                    <th className="w-[250px] px-3 py-3 font-semibold">Tài khoản</th>
-                    <th className="w-[170px] px-3 py-3 font-semibold">Vai trò</th>
-                    <th className="w-[190px] px-3 py-3 font-semibold">Phòng ban</th>
-                    <th className="w-[150px] px-3 py-3 font-semibold whitespace-nowrap">Trạng thái</th>
-                    <th className="w-[180px] px-3 py-3 font-semibold whitespace-nowrap">Hoạt động gần nhất</th>
-                    <th className="w-40 px-3 py-3 text-right font-semibold">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isLoading ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-16 text-center text-sm text-muted-foreground">
-                        <LoaderCircle className="mx-auto mb-3 size-7 animate-spin" />
-                        Đang tải danh sách tài khoản...
+              {!isLoading
+                ? accounts.map((account) => (
+                    <tr
+                      key={account.id}
+                      className="border-b border-border/70 transition-colors last:border-0 hover:bg-primary/5"
+                    >
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(account.id)}
+                          onChange={() =>
+                            setSelectedIds((current) =>
+                              current.includes(account.id)
+                                ? current.filter((id) => id !== account.id)
+                                : [...current, account.id],
+                            )
+                          }
+                          aria-label={`Chọn ${account.fullName}`}
+                          className="size-4 rounded border-input accent-primary"
+                        />
                       </td>
-                    </tr>
-                  ) : null}
-
-                  {!isLoading && accounts.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="px-4 py-16 text-center">
-                        <Search className="mx-auto mb-3 size-7 text-muted-foreground" />
-                        <p className="font-semibold">Không tìm thấy tài khoản</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Thử đổi từ khóa hoặc bộ lọc trạng thái.
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary ring-1 ring-primary/10">
+                            {account.initials}
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold">
+                              {account.fullName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {account.employeeCode}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="text-sm font-medium">
+                          {account.username || "Chưa cập nhật"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {account.email}
                         </p>
                       </td>
+                      <td className="px-3 py-3">
+                        <RoleTags roles={account.roles} />
+                      </td>
+                      <td className="px-3 py-3 text-sm text-muted-foreground">
+                        <p>{account.department}</p>
+                        {account.position ? (
+                          <p className="text-[0.68rem]">{account.position}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-3 align-middle">
+                        <StatusBadge status={account.status} />
+                      </td>
+                      <td className="px-3 py-3 align-middle">
+                        <LastLoginCell value={account.lastLoginAt} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <RowActions
+                          name={account.fullName}
+                          onEdit={() => openEditForm(account)}
+                          onStatus={() => void handleToggleStatus(account)}
+                          statusLabel={
+                            account.status === "ACTIVE" ? "Khóa" : "Mở khóa"
+                          }
+                        />
+                      </td>
                     </tr>
-                  ) : null}
-
-                  {!isLoading
-                    ? accounts.map((account) => (
-                        <tr key={account.id} className="border-b border-border/70 transition-colors last:border-0 hover:bg-primary/5">
-                          <td className="px-4 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.includes(account.id)}
-                              onChange={() =>
-                                setSelectedIds((current) =>
-                                  current.includes(account.id)
-                                    ? current.filter((id) => id !== account.id)
-                                    : [...current, account.id],
-                                )
-                              }
-                              aria-label={`Chọn ${account.fullName}`}
-                              className="size-4 rounded border-input accent-primary"
-                            />
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex items-center gap-3">
-                              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary ring-1 ring-primary/10">
-                                {account.initials}
-                              </span>
-                              <div>
-                                <p className="text-sm font-semibold">{account.fullName}</p>
-                                <p className="text-xs text-muted-foreground">{account.employeeCode}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <p className="text-sm font-medium">{account.username || "Chưa cập nhật"}</p>
-                            <p className="text-xs text-muted-foreground">{account.email}</p>
-                          </td>
-                          <td className="px-3 py-3">
-                            <RoleTags roles={account.roles} />
-                          </td>
-                          <td className="px-3 py-3 text-sm text-muted-foreground">
-                            <p>{account.department}</p>
-                            {account.position ? (
-                              <p className="text-[0.68rem]">{account.position}</p>
-                            ) : null}
-                          </td>
-                          <td className="px-3 py-3 align-middle">
-                            <StatusBadge status={account.status} />
-                          </td>
-                          <td className="px-3 py-3 align-middle">
-                            <LastLoginCell value={account.lastLoginAt} />
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                className="grid size-8 place-items-center rounded-md border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                                aria-label={`Sửa ${account.fullName}`}
-                                title="Sửa tài khoản"
-                                onClick={() => openEditForm(account)}
-                              >
-                                <Pencil className="size-4" />
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                                onClick={() => void handleToggleStatus(account)}
-                              >
-                                {account.status === "ACTIVE" ? "Khóa" : "Mở khóa"}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    : null}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-muted-foreground">
-                Hiển thị {accounts.length === 0 ? 0 : (page - 1) * pageSize + 1}–
-                {Math.min(page * pageSize, total)} trong {total} tài khoản
-              </p>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  className="grid size-8 place-items-center rounded-md border border-border text-muted-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={page === 1}
-                  onClick={() => {
-                    prepareFetch();
-                    setPage((current) => Math.max(1, current - 1));
-                  }}
-                  aria-label="Trang trước"
-                >
-                  <ChevronLeft className="size-4" />
-                </button>
-                {Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => (
-                  <button
-                    key={number}
-                    type="button"
-                    className={joinClass(
-                      "grid size-8 place-items-center rounded-md text-sm font-semibold transition",
-                      number === page
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                    onClick={() => {
-                      prepareFetch();
-                      setPage(number);
-                    }}
-                    aria-label={`Trang ${number}`}
-                  >
-                    {number}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="grid size-8 place-items-center rounded-md border border-border text-muted-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={page >= pageCount}
-                  onClick={() => {
-                    prepareFetch();
-                    setPage((current) => Math.min(pageCount, current + 1));
-                  }}
-                  aria-label="Trang sau"
-                >
-                  <ChevronRight className="size-4" />
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <p role="status" aria-live="polite" className="min-h-5 text-center text-xs text-muted-foreground">
-            {notice}
-          </p>
+                  ))
+                : null}
+            </tbody>
+          </table>
         </div>
-      </main>
+      </ListCard>
 
+      <p
+        role="status"
+        aria-live="polite"
+        className="min-h-5 text-center text-xs text-muted-foreground"
+      >
+        {notice}
+      </p>
       {formOpen ? (
         <AccountFormDialog
           key={editingAccount?.id ?? "create"}
@@ -859,7 +623,7 @@ export default function AccountManagementPage() {
           onSubmit={handleSubmitAccount}
         />
       ) : null}
-    </div>
+    </HrmAppShell>
   );
 }
 
@@ -964,6 +728,24 @@ function AccountFormDialog({
     }
   }
 
+  function applySubmitError(message: string) {
+    setFormError(message);
+
+    if (/email/i.test(message)) {
+      setFieldErrors((current) => ({ ...current, email: message }));
+      return;
+    }
+
+    if (/tên đăng nhập|username/i.test(message)) {
+      setFieldErrors((current) => ({ ...current, username: message }));
+      return;
+    }
+
+    if (/hồ sơ nhân viên|employee/i.test(message)) {
+      setFieldErrors((current) => ({ ...current, employeeId: message }));
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const values = readAccountFormValues(event.currentTarget);
@@ -977,14 +759,24 @@ function AccountFormDialog({
       return;
     }
 
-    void onSubmit({
-      username: values.username,
-      email: values.email,
-      employeeId: values.employeeId,
-      password: values.password || undefined,
-      status: account?.status ?? "ACTIVE",
-      roles: values.roles,
-    });
+    void (async () => {
+      try {
+        await onSubmit({
+          username: values.username,
+          email: values.email,
+          employeeId: values.employeeId,
+          password: values.password || undefined,
+          status: account?.status ?? "ACTIVE",
+          roles: values.roles,
+        });
+      } catch (submitError) {
+        applySubmitError(
+          submitError instanceof Error
+            ? submitError.message
+            : "Không thể lưu tài khoản. Vui lòng kiểm tra thông tin và thử lại.",
+        );
+      }
+    })();
   }
 
   return (
