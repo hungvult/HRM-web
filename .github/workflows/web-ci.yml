@@ -40,5 +40,8 @@ jobs:
       - name: Run ESLint
         run: npm run lint
 
+      - name: Test HRM API contracts
+        run: npm run test:hrm
+
       - name: Build application
         run: npm run build
