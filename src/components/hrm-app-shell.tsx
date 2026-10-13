@@ -24,6 +24,7 @@ import { ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logoutClientSide } from "@/lib/auth";
 import { canManageHrm, roleLabels, type CurrentUser } from "@/lib/hrm-api";
+import { canManageAttendance } from "@/lib/attendances";
 
 type HrmAppShellProps = {
   activeLabel: string;
@@ -60,7 +61,7 @@ const navGroups = [
   {
     label: "Chấm công & lương",
     items: [
-      { label: "Bảng công", href: "#", icon: Clock3 },
+      { label: "Bảng công", href: "/attendances", icon: Clock3 },
       { label: "Nghỉ phép", href: "#", icon: CalendarCheck },
       { label: "Bảng lương", href: "#", icon: WalletCards },
       { label: "Địa điểm làm việc", href: "#", icon: MapPin },
@@ -174,7 +175,9 @@ export default function HrmAppShell({
               items: group.items.filter(
                 (item) =>
                   item.href === "/profile" ||
-                  (item.href === "/accounts"
+                  (item.href === "/attendances"
+                    ? canManageAttendance(user ?? null)
+                    : item.href === "/accounts"
                     ? user?.roles.includes("ADMIN")
                     : canManageHrm(user ?? null)),
               ),
