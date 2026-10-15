@@ -313,6 +313,7 @@ function renderPage(
       Intl,
       Date,
       URLSearchParams,
+      process: { env: {} },
     });
     return exports;
   }

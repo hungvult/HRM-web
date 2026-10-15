@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  Bell,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -25,6 +24,7 @@ import { useRouter } from "next/navigation";
 import { logoutClientSide } from "@/lib/auth";
 import { canManageHrm, roleLabels, type CurrentUser } from "@/lib/hrm-api";
 import { canManageAttendance } from "@/lib/attendances";
+import NotificationBell from "@/components/notification-bell";
 
 type HrmAppShellProps = {
   activeLabel: string;
@@ -40,6 +40,8 @@ type HrmAppShellProps = {
   children: ReactNode;
   user?: CurrentUser | null;
   secondaryActionDisabled?: boolean;
+  preview?: boolean;
+  notificationPreviewCount?: number;
 };
 
 const navGroups = [
@@ -91,6 +93,8 @@ export default function HrmAppShell({
   children,
   user,
   secondaryActionDisabled,
+  notificationPreviewCount,
+  preview = false,
 }: HrmAppShellProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -154,15 +158,7 @@ export default function HrmAppShell({
                 "-"}
             </p>
           </div>
-          <button
-            type="button"
-            aria-label="Thông báo"
-            title="Thông báo chưa khả dụng"
-            disabled
-            className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            <Bell className="size-4" />
-          </button>
+          <NotificationBell signedIn={Boolean(user)} preview={preview} previewCount={notificationPreviewCount} />
         </div>
 
         <nav
