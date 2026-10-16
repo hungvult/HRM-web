@@ -40,6 +40,8 @@ type HrmAppShellProps = {
   children: ReactNode;
   user?: CurrentUser | null;
   secondaryActionDisabled?: boolean;
+  preview?: boolean;
+  notificationPreviewCount?: number;
 };
 
 const navGroups = [
@@ -62,7 +64,7 @@ const navGroups = [
     label: "Chấm công & lương",
     items: [
       { label: "Bảng công", href: "/attendances", icon: Clock3 },
-      { label: "Nghỉ phép", href: "#", icon: CalendarCheck },
+      { label: "Nghỉ phép", href: "/leave-requests", icon: CalendarCheck },
       { label: "Bảng lương", href: "#", icon: WalletCards },
       { label: "Địa điểm làm việc", href: "#", icon: MapPin },
     ],
@@ -175,7 +177,9 @@ export default function HrmAppShell({
               items: group.items.filter(
                 (item) =>
                   item.href === "/profile" ||
-                  (item.href === "/attendances"
+                  (item.href === "/leave-requests"
+                    ? user?.roles.some((role) => ["ADMIN", "HR", "MANAGER"].includes(role))
+                    : item.href === "/attendances"
                     ? canManageAttendance(user ?? null)
                     : item.href === "/accounts"
                     ? user?.roles.includes("ADMIN")
