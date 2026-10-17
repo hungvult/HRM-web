@@ -18,6 +18,7 @@ import LeaveDetailDrawer, { LeaveBadge } from "@/components/leave-detail";
 import { fetchMyProfile } from "@/lib/hrm-api";
 import { formatDate } from "@/lib/hrm-format";
 import { useApiResource } from "@/lib/use-api-resource";
+import { announceNotificationChange } from "@/lib/notifications";
 import {
   canManageLeave,
   canReviewLeave,
@@ -27,6 +28,7 @@ import {
   leaveDateTime,
   leaveLabels,
   leaveTypes,
+  reviewLeaveRequest,
   validateLeaveFilters,
   validateRejection,
   type LeaveDetail,
@@ -132,17 +134,32 @@ export default function LeaveManagement({
     });
     setQuery("");
   }
-  function review(
+  async function review(
     record: LeaveDetail,
     decision: "APPROVED" | "REJECTED",
     reason: string,
+    signal: AbortSignal,
   ) {
     if (
-      !preview ||
       !canReviewLeave(user, record) ||
       (decision === "REJECTED" && validateRejection(reason))
     )
+      throw new Error("Không thể xử lý đơn nghỉ phép này.");
+    if (!preview) {
+      if (!apiEnabled) throw new Error("Dữ liệu nghỉ phép chưa khả dụng.");
+      setNotice("");
+      await reviewLeaveRequest(record.id, decision, reason, signal);
+      if (signal.aborted) return;
+      resource.reload();
+      detail.reload();
+      announceNotificationChange();
+      setNotice(
+        decision === "APPROVED"
+          ? "Đã duyệt đơn nghỉ phép."
+          : "Đã từ chối đơn nghỉ phép.",
+      );
       return;
+    }
     const latest = samples.find((item) => item.id === record.id);
     if (!latest || latest.status !== "PENDING") return;
     const now = new Date().toISOString();
@@ -466,7 +483,6 @@ export default function LeaveManagement({
           key={`${selected}-${role}`}
           record={selectedRecord}
           user={user}
-          preview={preview}
           loading={!preview && detail.loading}
           error={
             preview
@@ -479,6 +495,10 @@ export default function LeaveManagement({
           }
           onClose={() => setSelected(null)}
           onRetry={detail.reload}
+          onRefresh={() => {
+            detail.reload();
+            resource.reload();
+          }}
           onReviewed={review}
         />
       )}

@@ -34,6 +34,16 @@ export type LeaveDetail = LeaveRecord & {
   updatedAt: string;
   statusHistory: LeaveHistory[];
 };
+export type LeaveDecision = "APPROVED" | "REJECTED";
+export type LeaveReviewResult = {
+  id: number;
+  requestCode: string;
+  status: LeaveDecision;
+  reviewedByEmployeeId: number;
+  reviewedAt: string;
+  remainingDays?: number;
+  rejectionReason?: string;
+};
 export type LeaveFilters = {
   status: string;
   leaveTypeId: string;
@@ -61,7 +71,7 @@ export function canManageLeave(user: CurrentUser | null) {
 }
 export function canReviewLeave(user: CurrentUser | null, record: LeaveRecord) {
   return (
-    canManageLeave(user) &&
+    Boolean(user?.roles.some((role) => ["HR", "MANAGER"].includes(role))) &&
     Boolean(user?.employee?.id) &&
     user!.employee!.id !== record.employeeId &&
     record.status === "PENDING"
@@ -90,8 +100,8 @@ export function validateLeaveFilters(filters: LeaveFilters) {
 }
 export function validateRejection(reason: string) {
   if (!reason.trim()) return "Vui lòng nhập lý do từ chối.";
-  if (reason.trim().length > 1000)
-    return "Lý do từ chối không được vượt quá 1.000 ký tự.";
+  if (reason.length > 2000)
+    return "Lý do từ chối không được vượt quá 2.000 ký tự.";
   return "";
 }
 export function leaveError(error: unknown) {
@@ -107,7 +117,53 @@ export function leaveError(error: unknown) {
   }
   return "Không thể tải đơn nghỉ phép. Vui lòng thử lại.";
 }
-// Only parameters supported by backend PR #69 are sent; employee search is not yet supported.
+export function leaveReviewError(error: unknown) {
+  if (error instanceof ApiError) {
+    const payload = error.payload;
+    const code =
+      payload && typeof payload === "object" && "code" in payload
+        ? String(payload.code)
+        : "";
+    if (error.status === 401 || error.status === 403 || error.status === 404)
+      return leaveError(error);
+    if (code === "LEAVE_BALANCE_INSUFFICIENT")
+      return "Số dư phép hiện tại không đủ để duyệt đơn này.";
+    if (code === "LEAVE_BALANCE_NOT_FOUND")
+      return "Chưa có số dư phép của nhân viên cho loại phép và năm của đơn này.";
+    if (code === "LEAVE_REQUEST_NOT_PENDING")
+      return "Đơn không còn chờ duyệt. Vui lòng tải lại để xem kết quả mới nhất.";
+    if (error.status === 409)
+      return "Không thể xử lý đơn ở trạng thái hiện tại. Vui lòng tải lại đơn.";
+    if (error.status === 400)
+      return "Dữ liệu xử lý đơn không hợp lệ. Lý do từ chối phải có từ 1 đến 2.000 ký tự.";
+  }
+  // A lost response does not prove the transaction failed; never retry a write automatically.
+  return "Chưa xác nhận được kết quả xử lý. Vui lòng tải lại đơn trước khi thử lại.";
+}
+export async function reviewLeaveRequest(
+  id: number,
+  decision: LeaveDecision,
+  reason: string,
+  signal?: AbortSignal,
+) {
+  if (!Number.isSafeInteger(id) || id < 1)
+    throw new Error("Mã đơn nghỉ phép không hợp lệ.");
+  if (decision !== "APPROVED" && decision !== "REJECTED")
+    throw new Error("Thao tác xử lý đơn không hợp lệ.");
+  if (decision === "REJECTED") {
+    const error = validateRejection(reason);
+    if (error) throw new Error(error);
+  }
+  return apiRequest<LeaveReviewResult>(
+    `/leave-requests/${id}/${decision === "APPROVED" ? "approve" : "reject"}`,
+    {
+      method: "POST",
+      ...(decision === "REJECTED" ? { body: { reason: reason.trim() } } : {}),
+      signal,
+    },
+  );
+}
+// The deployed list contract still has no employee or keyword filter.
 export async function fetchLeaveRequests(
   filters: LeaveFilters,
   signal?: AbortSignal,

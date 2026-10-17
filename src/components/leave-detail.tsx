@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronLeft, History, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, ChevronLeft, History, LoaderCircle, X } from "lucide-react";
 import { ApiFeedback } from "@/components/api-feedback";
 import { Drawer, FormField, inputClass } from "@/components/hrm-ui";
 import { formatDate } from "@/lib/hrm-format";
@@ -9,6 +9,7 @@ import {
   canReviewLeave,
   leaveDateTime,
   leaveStatusLabel,
+  leaveReviewError,
   validateRejection,
   type LeaveDetail,
 } from "@/lib/leave-requests";
@@ -83,23 +84,24 @@ export default function LeaveDetailDrawer({
   loading,
   error,
   user,
-  preview,
   onClose,
   onRetry,
+  onRefresh,
   onReviewed,
 }: {
   record: LeaveDetail | null;
   loading: boolean;
   error: string;
   user: CurrentUser | null;
-  preview: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onRefresh: () => void;
   onReviewed: (
     record: LeaveDetail,
     decision: "APPROVED" | "REJECTED",
     reason: string,
-  ) => void;
+    signal: AbortSignal,
+  ) => Promise<void>;
 }) {
   const [tab, setTab] = useState<"detail" | "history">("detail");
   const [decision, setDecision] = useState<"APPROVED" | "REJECTED" | null>(
@@ -108,18 +110,77 @@ export default function LeaveDetailDrawer({
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState("");
   const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [mutationError, setMutationError] = useState("");
+  const [needsReload, setNeedsReload] = useState(false);
+  const lock = useRef(false);
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
   const allowed = Boolean(record && canReviewLeave(user, record));
   function prepare() {
     const message = decision === "REJECTED" ? validateRejection(reason) : "";
     setReasonError(message);
     if (!message) setConfirm(true);
   }
+  async function submit() {
+    if (
+      lock.current ||
+      needsReload ||
+      !record ||
+      !decision ||
+      !allowed ||
+      loading ||
+      error
+    )
+      return;
+    const message = decision === "REJECTED" ? validateRejection(reason) : "";
+    setReasonError(message);
+    if (message) {
+      setConfirm(false);
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setMutationError("");
+    const request = new AbortController();
+    controller.current = request;
+    try {
+      await onReviewed(record, decision, reason.trim(), request.signal);
+      if (!request.signal.aborted) {
+        setDecision(null);
+        setConfirm(false);
+        setReason("");
+      }
+    } catch (error) {
+      if (!request.signal.aborted) {
+        setMutationError(leaveReviewError(error));
+        setNeedsReload(true);
+      }
+    } finally {
+      lock.current = false;
+      if (!request.signal.aborted) setBusy(false);
+    }
+  }
   return (
     <Drawer
       title={record ? `Đơn ${record.requestCode}` : "Chi tiết đơn nghỉ phép"}
       onClose={onClose}
+      busy={busy}
     >
       <ApiFeedback error={error} onRetry={onRetry} />
+      <ApiFeedback
+        error={mutationError}
+        onRetry={
+          !busy
+            ? () => {
+                setMutationError("");
+                setNeedsReload(false);
+                setConfirm(false);
+                onRefresh();
+              }
+            : undefined
+        }
+      />
       {loading && (
         <p
           role="status"
@@ -141,6 +202,7 @@ export default function LeaveDetailDrawer({
                 role="tab"
                 aria-selected={tab === value}
                 type="button"
+                disabled={busy}
                 onClick={() => setTab(value)}
                 className={`flex h-10 items-center gap-2 border-b-2 px-3 text-sm font-medium ${tab === value ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}
               >
@@ -199,19 +261,11 @@ export default function LeaveDetailDrawer({
                 </p>
               ) : allowed ? (
                 <>
-                  {!preview && (
-                    <p
-                      role="status"
-                      className="mb-3 text-sm text-muted-foreground"
-                    >
-                      Duyệt và từ chối chưa khả dụng.
-                    </p>
-                  )}
                   {!decision ? (
                     <div className="flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
-                        disabled={!preview}
+                        disabled={busy || needsReload}
                         onClick={() => {
                           setDecision("REJECTED");
                           setReason("");
@@ -224,7 +278,7 @@ export default function LeaveDetailDrawer({
                       </button>
                       <button
                         type="button"
-                        disabled={!preview}
+                        disabled={busy || needsReload}
                         onClick={() => {
                           setDecision("APPROVED");
                           setConfirm(false);
@@ -241,11 +295,7 @@ export default function LeaveDetailDrawer({
                       onSubmit={(event) => {
                         event.preventDefault();
                         if (!confirm) prepare();
-                        else if (preview && allowed) {
-                          onReviewed(record, decision, reason.trim());
-                          setDecision(null);
-                          setConfirm(false);
-                        }
+                        else void submit();
                       }}
                     >
                       <h3 className="mb-3 text-base font-semibold">
@@ -264,7 +314,8 @@ export default function LeaveDetailDrawer({
                               setReasonError("");
                             }}
                             rows={4}
-                            maxLength={1000}
+                            maxLength={2000}
+                            disabled={busy}
                             className={inputClass + " h-auto py-2"}
                           />
                         </FormField>
@@ -296,6 +347,7 @@ export default function LeaveDetailDrawer({
                       <div className="mt-4 flex flex-wrap justify-end gap-2">
                         <button
                           type="button"
+                          disabled={busy}
                           onClick={() =>
                             confirm ? setConfirm(false) : setDecision(null)
                           }
@@ -306,10 +358,16 @@ export default function LeaveDetailDrawer({
                         </button>
                         <button
                           type="submit"
+                          disabled={busy || needsReload}
+                          aria-busy={busy}
                           className="flex h-10 items-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground"
                         >
-                          <Check className="size-4" />
-                          {confirm ? "Xác nhận" : "Tiếp tục"}
+                          {busy ? (
+                            <LoaderCircle className="size-4 animate-spin" />
+                          ) : (
+                            <Check className="size-4" />
+                          )}
+                          {busy ? "Đang xử lý..." : confirm ? "Xác nhận" : "Tiếp tục"}
                         </button>
                       </div>
                     </form>
