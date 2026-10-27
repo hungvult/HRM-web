@@ -1,5 +1,6 @@
 import { apiRequest, ApiError } from "@/lib/api";
 import { fetchPage, type CurrentUser } from "@/lib/hrm-api";
+import { matchesSearch } from "@/lib/hrm-format";
 
 export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 export type LeaveHistory = {
@@ -163,12 +164,39 @@ export async function reviewLeaveRequest(
     },
   );
 }
-// The deployed list contract still has no employee or keyword filter.
+// Search every page of the server-scoped result until the API supports keywords.
 export async function fetchLeaveRequests(
   filters: LeaveFilters,
   signal?: AbortSignal,
+  keyword = "",
 ) {
   try {
+    const query = keyword.trim();
+    if (query) {
+      const matches: LeaveRecord[] = [];
+      for (let page = 0; ; page += 1) {
+        signal?.throwIfAborted();
+        const result = await fetchPage<LeaveRecord>(
+          "/leave-requests",
+          { ...filters, page, size: 100 },
+          signal,
+        );
+        signal?.throwIfAborted();
+        matches.push(...result.content.filter((record) =>
+          matchesSearch(query, [record.requestCode, record.employeeCode, record.employeeName]),
+        ));
+        if (!result.content.length || !result.hasNext) break;
+      }
+      const start = filters.page * filters.size;
+      return {
+        content: matches.slice(start, start + filters.size),
+        page: filters.page,
+        size: filters.size,
+        totalElements: matches.length,
+        totalPages: Math.ceil(matches.length / filters.size),
+        hasNext: start + filters.size < matches.length,
+      };
+    }
     return await fetchPage<LeaveRecord>(
       "/leave-requests",
       {
