@@ -43,6 +43,7 @@ const api = (request = async () => ({}), page = request) =>
   moduleAt("../src/lib/leave-requests.ts", {
     "@/lib/api": { apiRequest: request, ApiError },
     "@/lib/hrm-api": { fetchPage: page },
+    "@/lib/hrm-format": moduleAt("../src/lib/hrm-format.ts"),
   });
 const user = (roles, id = 900) => ({ roles, employee: { id } });
 const filters = () => ({
@@ -172,6 +173,67 @@ test("list uses only actual PR69 query contract and zero-based paging", async ()
     assert.equal(actualSignal, signal);
   }).fetchLeaveRequests(filters(), signal);
 });
+test("P1T-238 searches request code, employee code and Vietnamese name across API pages", async () => {
+  const record = (id, name = "Đặng Hoàng Nam") => ({
+    id, requestCode: `NP${String(id).padStart(6, "0")}`,
+    employeeCode: `E${String(id).padStart(4, "0")}`, employeeName: name,
+  });
+  const rows = [record(1, "Nguyễn An"), record(105), record(106)];
+  for (const [keyword, expected] of [[" NP000105 ", [105]], ["E0105", [105]],
+    ["dang hoang nam", [105, 106]], ["ĐẶNG HOÀNG NAM", [105, 106]], ["missing", []]]) {
+    const calls = [];
+    const controller = new AbortController();
+    const client = api(undefined, async (path, query, signal) => {
+      calls.push(query.page);
+      assert.equal(path, "/leave-requests");
+      assert.equal(signal, controller.signal);
+      assert.equal(query.status, "PENDING");
+      assert.equal(query.leaveTypeId, "2");
+      assert.equal(query.fromDate, "2026-10-01");
+      assert.equal(query.toDate, "2026-10-31");
+      assert.equal(query.size, 100);
+      assert.equal(query.q, undefined);
+      return { content: query.page === 0 ? rows.slice(0, 1) : rows.slice(1), hasNext: query.page === 0 };
+    });
+    const result = await client.fetchLeaveRequests({ ...filters(), leaveTypeId: "2",
+      fromDate: "2026-10-01", toDate: "2026-10-31" }, controller.signal, keyword);
+    assert.deepEqual(plain(result.content.map(x => x.id)), expected);
+    assert.equal(result.totalElements, expected.length);
+    assert.deepEqual(calls, [0, 1]);
+  }
+});
+
+test("P1T-238 filters before pagination and reports filtered totals", async () => {
+  const client = api(undefined, async (_path, query) => ({
+    content: Array.from({ length: 12 }, (_, i) => ({ id: i + 1,
+      requestCode: `NP${i + 1}`, employeeCode: "E0001", employeeName: "Trần Hà" })),
+    hasNext: false,
+  }));
+  const result = await client.fetchLeaveRequests({ ...filters(), page: 1 }, undefined, "E0001");
+  assert.deepEqual(plain(result.content.map(x => x.id)), [11, 12]);
+  assert.equal(result.page, 1);
+  assert.equal(result.totalElements, 12);
+  assert.equal(result.totalPages, 2);
+  assert.equal(result.hasNext, false);
+});
+
+test("P1T-238 aborts searches and never returns partial matches on page failure", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const cancelled = api(undefined, async () => {
+    calls++;
+    controller.abort();
+    return { content: [{ requestCode: "NP1", employeeCode: "E1", employeeName: "A" }], hasNext: true };
+  });
+  await assert.rejects(cancelled.fetchLeaveRequests(filters(), controller.signal, "NP"), { name: "AbortError" });
+  assert.equal(calls, 1);
+  const failing = api(undefined, async (_path, query) => {
+    if (query.page) throw new ApiError(403);
+    return { content: [{ requestCode: "NP1", employeeCode: "E1", employeeName: "A" }], hasNext: true };
+  });
+  await assert.rejects(failing.fetchLeaveRequests(filters(), undefined, "NP"), /quyền/);
+});
+
 test("detail is read only and rejects invalid IDs", async () => {
   let called = 0;
   const client = api(async (path, options) => {

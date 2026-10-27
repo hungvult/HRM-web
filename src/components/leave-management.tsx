@@ -71,8 +71,8 @@ export default function LeaveManagement({
   const [notice, setNotice] = useState("");
   const filterError = validateLeaveFilters(filters);
   const load = useCallback(
-    (signal: AbortSignal) => fetchLeaveRequests(filters, signal),
-    [filters],
+    (signal: AbortSignal) => fetchLeaveRequests(filters, signal, query),
+    [filters, query],
   );
   const resource = useApiResource(
     load,
@@ -365,14 +365,11 @@ export default function LeaveManagement({
               <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
               <input
                 value={query}
-                disabled={!preview}
+                disabled={!preview && (!apiEnabled || !allowed)}
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setFilters((current) => ({ ...current, page: 0 }));
                 }}
-                title={
-                  !preview ? "Tìm theo nhân viên chưa khả dụng" : undefined
-                }
                 placeholder="Mã đơn, mã hoặc tên nhân viên"
                 className={inputClass + " pl-9"}
               />
