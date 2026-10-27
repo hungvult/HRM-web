@@ -359,8 +359,8 @@ export default function LeaveManagement({
               />
             </FormField>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <label className="relative min-w-0 flex-1 sm:max-w-80">
+          <div className="grid grid-cols-1 items-center gap-3 border-b border-border px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <label className="relative min-w-0 sm:max-w-80">
               <span className="sr-only">Tìm mã đơn hoặc nhân viên</span>
               <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
               <input
@@ -377,10 +377,10 @@ export default function LeaveManagement({
                 className={inputClass + " pl-9"}
               />
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <select
                 aria-label="Số đơn mỗi trang"
-                className={inputClass + " w-20"}
+                className={inputClass + " max-w-20 flex-none"}
                 value={filters.size}
                 onChange={(event) =>
                   changeFilter("size", Number(event.target.value))
@@ -393,7 +393,7 @@ export default function LeaveManagement({
               <button
                 type="button"
                 onClick={reset}
-                className="h-10 rounded-md border border-border px-3 text-sm"
+                className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-border px-3 text-sm"
               >
                 Xóa bộ lọc
               </button>
