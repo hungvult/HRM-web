@@ -149,7 +149,7 @@ export const fetchEmployee = (id: number, signal?: AbortSignal) =>
   apiRequest<EmployeeRecord>(`/employees/${id}`, { signal });
 export const saveEmployee = (payload: EmployeePayload, id?: number) =>
   apiRequest<EmployeeRecord>(id ? `/employees/${id}` : "/employees", {
-    method: id ? "PATCH" : "POST",
+    method: id ? "PUT" : "POST",
     body: {
       fullName: payload.fullName.trim(),
       email: payload.email.trim(),
