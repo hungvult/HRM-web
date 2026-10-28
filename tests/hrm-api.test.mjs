@@ -72,7 +72,7 @@ test("blank filters are not sent", async () => {
 });
 for (const [id, method, path] of [
   [undefined, "POST", "/employees"],
-  [7, "PATCH", "/employees/7"],
+  [7, "PUT", "/employees/7"],
 ]) {
   test("employee " + method + " sends only supported fields", async () => {
     const api = client(async (actual, options) => {
@@ -104,6 +104,22 @@ for (const [id, method, path] of [
     );
   });
 }
+test("P1T-232 employee phone update uses PUT and preserves the submitted phone", async () => {
+  const calls = [];
+  const api = client(async (path, options) => {
+    calls.push({ path, options });
+    return { id: 6, phone: options.body.phone };
+  });
+  const result = await api.saveEmployee({
+    fullName: "Đặng Hoàng Nam", email: "employee03@example.test",
+    phone: " 0911001007 ", hireDate: "2026-09-01",
+  }, 6);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, "/employees/6");
+  assert.equal(calls[0].options.method, "PUT");
+  assert.equal(result.phone, "0911001007");
+});
+
 test("employee status uses PATCH, enum and reason", async () => {
   const api = client(async (path, options) => {
     assert.equal(path, "/employees/7/status");

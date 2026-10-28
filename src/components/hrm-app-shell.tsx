@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  Bell,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -24,6 +23,8 @@ import { ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logoutClientSide } from "@/lib/auth";
 import { canManageHrm, roleLabels, type CurrentUser } from "@/lib/hrm-api";
+import { canManageAttendance } from "@/lib/attendances";
+import NotificationBell from "@/components/notification-bell";
 
 type HrmAppShellProps = {
   activeLabel: string;
@@ -39,6 +40,8 @@ type HrmAppShellProps = {
   children: ReactNode;
   user?: CurrentUser | null;
   secondaryActionDisabled?: boolean;
+  preview?: boolean;
+  notificationPreviewCount?: number;
 };
 
 const navGroups = [
@@ -60,8 +63,8 @@ const navGroups = [
   {
     label: "Chấm công & lương",
     items: [
-      { label: "Bảng công", href: "#", icon: Clock3 },
-      { label: "Nghỉ phép", href: "#", icon: CalendarCheck },
+      { label: "Bảng công", href: "/attendances", icon: Clock3 },
+      { label: "Nghỉ phép", href: "/leave-requests", icon: CalendarCheck },
       { label: "Bảng lương", href: "#", icon: WalletCards },
       { label: "Địa điểm làm việc", href: "#", icon: MapPin },
     ],
@@ -90,6 +93,8 @@ export default function HrmAppShell({
   children,
   user,
   secondaryActionDisabled,
+  notificationPreviewCount,
+  preview = false,
 }: HrmAppShellProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -153,15 +158,7 @@ export default function HrmAppShell({
                 "-"}
             </p>
           </div>
-          <button
-            type="button"
-            aria-label="Thông báo"
-            title="Thông báo chưa khả dụng"
-            disabled
-            className="relative grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          >
-            <Bell className="size-4" />
-          </button>
+          <NotificationBell signedIn={Boolean(user)} preview={preview} previewCount={notificationPreviewCount} />
         </div>
 
         <nav
@@ -174,7 +171,11 @@ export default function HrmAppShell({
               items: group.items.filter(
                 (item) =>
                   item.href === "/profile" ||
-                  (item.href === "/accounts"
+                  (item.href === "/leave-requests"
+                    ? user?.roles.some((role) => ["ADMIN", "HR", "MANAGER"].includes(role))
+                    : item.href === "/attendances"
+                    ? canManageAttendance(user ?? null)
+                    : item.href === "/accounts"
                     ? user?.roles.includes("ADMIN")
                     : canManageHrm(user ?? null)),
               ),

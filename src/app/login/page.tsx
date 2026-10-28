@@ -11,7 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
-import { loginWithApi, type LoginPayload } from "@/lib/auth";
+import { getPostLoginPath, loginWithApi, type LoginPayload } from "@/lib/auth";
 
 function resolveLoginMessage(error: unknown) {
   if (error instanceof Error) {
@@ -48,9 +48,9 @@ export default function LoginPage() {
     };
 
     try {
-      await loginWithApi(payload);
+      const response = await loginWithApi(payload);
       setMessage("Đăng nhập thành công. Đang chuyển tới hệ thống...");
-      router.push("/accounts");
+      router.replace(getPostLoginPath(response.user?.roles));
     } catch (error) {
       setMessage(resolveLoginMessage(error));
     } finally {

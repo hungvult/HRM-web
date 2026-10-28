@@ -6,7 +6,16 @@ export type LoginPayload = {
   remember: boolean;
 };
 
-type LoginResponse = Record<string, unknown>;
+type LoginResponse = Record<string, unknown> & {
+  user?: { roles?: string[] };
+};
+
+export function getPostLoginPath(roles: readonly string[] = []) {
+  if (roles.includes("ADMIN")) return "/accounts";
+  if (roles.includes("HR")) return "/employees";
+  if (roles.includes("MANAGER")) return "/attendances";
+  return "/profile";
+}
 
 export async function loginWithApi(payload: LoginPayload) {
   logoutClientSide();
