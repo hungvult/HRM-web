@@ -1,0 +1,6 @@
+simulation: salary-profiles
+routing: path
+mocks:
+  - name: hrm-backend
+    routeKey: backend
+    path: postman/mocks/salary-profiles/config.yaml

@@ -24,6 +24,7 @@ import { useRouter } from "next/navigation";
 import { logoutClientSide } from "@/lib/auth";
 import { canManageHrm, roleLabels, type CurrentUser } from "@/lib/hrm-api";
 import { canManageAttendance } from "@/lib/attendances";
+import { canManageSalary } from "@/lib/salary-profiles";
 import NotificationBell from "@/components/notification-bell";
 
 type HrmAppShellProps = {
@@ -65,6 +66,7 @@ const navGroups = [
     items: [
       { label: "Bảng công", href: "/attendances", icon: Clock3 },
       { label: "Nghỉ phép", href: "/leave-requests", icon: CalendarCheck },
+      { label: "Quản lý lương", href: "/salary-profiles", icon: WalletCards },
       { label: "Bảng lương", href: "#", icon: WalletCards },
       { label: "Địa điểm làm việc", href: "#", icon: MapPin },
     ],
@@ -171,7 +173,9 @@ export default function HrmAppShell({
               items: group.items.filter(
                 (item) =>
                   item.href === "/profile" ||
-                  (item.href === "/leave-requests"
+                  (item.href === "/salary-profiles"
+                    ? canManageSalary(user ?? null)
+                    : item.href === "/leave-requests"
                     ? user?.roles.some((role) => ["ADMIN", "HR", "MANAGER"].includes(role))
                     : item.href === "/attendances"
                     ? canManageAttendance(user ?? null)
