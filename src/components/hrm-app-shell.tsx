@@ -67,7 +67,7 @@ const navGroups = [
       { label: "Bảng công", href: "/attendances", icon: Clock3 },
       { label: "Nghỉ phép", href: "/leave-requests", icon: CalendarCheck },
       { label: "Quản lý lương", href: "/salary-profiles", icon: WalletCards },
-      { label: "Bảng lương", href: "#", icon: WalletCards },
+      { label: "Bảng lương", href: "/payroll-runs", icon: WalletCards },
       { label: "Địa điểm làm việc", href: "#", icon: MapPin },
     ],
   },
@@ -173,7 +173,7 @@ export default function HrmAppShell({
               items: group.items.filter(
                 (item) =>
                   item.href === "/profile" ||
-                  (item.href === "/salary-profiles"
+                  (["/salary-profiles", "/payroll-runs"].includes(item.href)
                     ? canManageSalary(user ?? null)
                     : item.href === "/leave-requests"
                     ? user?.roles.some((role) => ["ADMIN", "HR", "MANAGER"].includes(role))
