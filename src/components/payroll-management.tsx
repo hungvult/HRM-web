@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import {
   useCallback,
   useEffect,
@@ -8,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
+import { ApiError } from "@/lib/api";
 import { ArrowLeft, Eye, RefreshCcw } from "lucide-react";
 import HrmAppShell from "@/components/hrm-app-shell";
 import { ApiFeedback, LoadingRow } from "@/components/api-feedback";
@@ -30,6 +33,7 @@ import {
   fetchPayrollItems,
   fetchPayrollRun,
   fetchPayrollRuns,
+  findExistingPayrollRun,
   lastClosedMonth,
   payrollErrorMessage,
   payrollStatusLabels,
@@ -41,6 +45,7 @@ import {
   type PayrollItem,
   type PayrollItemFilters,
   type PayrollPreview,
+  type PayrollRunRow,
   type PayrollStatus,
   type PayrollSummary,
 } from "@/lib/payroll-runs";
@@ -126,17 +131,6 @@ function Summary({ value, label }: { value: PayrollSummary; label: string }) {
     </section>
   );
 }
-function Notice({ children }: { children: ReactNode }) {
-  return (
-    <p
-      role="status"
-      className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-    >
-      {children}
-    </p>
-  );
-}
-
 export default function PayrollManagement() {
   const session = useApiResource(fetchMyProfile);
   const allowed = canManageSalary(session.data);
@@ -183,40 +177,29 @@ export default function PayrollManagement() {
               Danh sách bảng lương
             </button>
           )}
-          {notice && <Notice>{notice}</Notice>}
-          {view === "list" ? (
-            <RunList
-              filters={filters}
-              onFilters={setFilters}
-              onSelect={(id) => {
-                setNotice("");
-                setView(id);
-              }}
-            />
-          ) : view === "preview" ? (
+
+          {view === "preview" ? (
             <PreviewPanel
               onBusy={setLocked}
-              onCreated={(id) => {
-                setNotice(
-                  "Đã tạo bảng lương. Kiểm tra chi tiết trước khi công bố.",
-                );
-                setView(id);
-              }}
+              onExisting={(id) => { setNotice(""); setView(id); }}
+              onCreated={(id) => { setNotice("Đã tạo bảng lương. Kiểm tra chi tiết trước khi công bố."); setView(id); }}
             />
           ) : (
-            <RunDetail
-              key={view}
-              id={view}
-              onBusy={setLocked}
-              onPublished={() => setNotice("")}
-            />
+            <>
+              <RunList filters={filters} onFilters={setFilters} onSelect={(id) => { setNotice(""); setView(id); }} />
+              {typeof view === "number" && <Drawer title="Chi tiết bảng lương" wide busy={locked} onClose={back}>
+                <RunDetail key={view} id={view} onBusy={setLocked} onPublished={() => setNotice("")} />
+              </Drawer>}
+            </>
           )}
+          <OperationFeedback message={notice} onClose={() => setNotice("")} />
         </>
       )}
     </HrmAppShell>
   );
 }
 
+/** UC018 giữ danh sách theo bộ lọc; chỉ nút Chi tiết truyền payroll_runs.id sang panel, không tự chọn bảng. */
 function RunList({
   filters,
   onFilters,
@@ -239,7 +222,7 @@ function RunList({
       description="Dữ liệu đã lưu của từng kỳ lương"
       actions={
         <>
-          <label className="w-44">
+          <label className="w-56 max-w-full shrink-0">
             <span className="sr-only">Kỳ lương</span>
             <input
               aria-label="Kỳ lương"
@@ -363,6 +346,7 @@ function RunList({
   );
 }
 
+/** Đọc snapshot của đúng payrollRunId; công bố giữ bước xác nhận và không tính lại bằng hồ sơ lương hiện tại. */
 function RunDetail({
   id,
   onBusy,
@@ -430,7 +414,7 @@ function RunDetail({
   if (!run) return null;
   return (
     <>
-      {notice && <Notice>{notice}</Notice>}
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
       <ListCard
         title={`Bảng lương ${periodLabel(run.period)}`}
         description="Thông tin được lưu tại thời điểm tạo bảng lương"
@@ -490,7 +474,8 @@ function RunDetail({
           </div>
         </dl>
       </ListCard>
-      {error && <ApiFeedback error={error} onRetry={reload} />}
+      <OperationFeedback message={error} kind="error" onClose={() => setError("")} />
+      {uncertain && <button type="button" className={button} onClick={reload}>Tải lại để kiểm tra trạng thái</button>}
       <Summary value={run.summary} label="Tổng toàn bộ bảng lương" />
       <ItemList
         filters={filters}
@@ -532,12 +517,15 @@ function RunDetail({
 function PreviewPanel({
   onBusy,
   onCreated,
+  onExisting,
 }: {
   onBusy: (value: boolean) => void;
   onCreated: (id: number) => void;
+  onExisting: (id: number) => void;
 }) {
   const [period, setPeriod] = useState(() => lastClosedMonth());
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
+  const [existing, setExisting] = useState<PayrollRunRow | null>(null);
   const [busy, setBusy] = useState<"preview" | "create" | "">("");
   const [error, setError] = useState("");
   const [invalid, setInvalid] = useState(false);
@@ -550,6 +538,7 @@ function PreviewPanel({
     return () => clearInterval(interval);
   }, []);
   const ready = !invalid && canConfirmPayroll(preview, period, now);
+  // Tra bảng đã lưu theo năm/tháng trước khi tạo preview; lỗi tra cứu không được coi là kỳ chưa tồn tại.
   async function load() {
     if (writing.current) return;
     writing.current = true;
@@ -560,6 +549,10 @@ function PreviewPanel({
     setInvalid(false);
     setPage(0);
     try {
+      // UC017 kiểm kỳ trước khi tính thử; API vẫn chặn trùng lần cuối khi xác nhận tạo.
+      const saved = await findExistingPayrollRun(period);
+      if (saved) { setExisting(saved); return; }
+      setExisting(null);
       const result = await previewPayroll(period);
       setPreview(result);
       setNow(Date.now());
@@ -571,6 +564,7 @@ function PreviewPanel({
       onBusy(false);
     }
   }
+  // Chỉ dùng previewToken còn hiệu lực để xác nhận; BE vẫn chặn trùng nếu kỳ vừa được người khác tạo.
   async function create() {
     // Recheck time at click, not just at the last render/timer tick.
     if (
@@ -588,7 +582,14 @@ function PreviewPanel({
       const result = await confirmPayroll(preview.previewToken);
       onCreated(result.id);
     } catch (err) {
-      setError(payrollErrorMessage(err, true));
+      // Người khác có thể đã tạo kỳ sau bước tra cứu; chỉ đọc lại để mở bản có sẵn, không POST lại.
+      if (err instanceof ApiError && (err.payload as { code?: string } | null)?.code === "PAYROLL_PERIOD_EXISTS") {
+        try {
+          const saved = await findExistingPayrollRun(period);
+          setExisting(saved);
+          setError(saved ? "" : payrollErrorMessage(err, true));
+        } catch { setError("Kỳ lương đã tồn tại nhưng chưa tải được chi tiết. Vui lòng quay lại danh sách để kiểm tra."); }
+      } else setError(payrollErrorMessage(err, true));
       setInvalid(true);
       setConfirm(false);
     } finally {
@@ -623,6 +624,7 @@ function PreviewPanel({
                 disabled={Boolean(busy)}
                 onChange={(e) => {
                   setPeriod(e.target.value);
+                  setExisting(null);
                   setPreview(null);
                   setConfirm(false);
                   setError("");
@@ -648,7 +650,8 @@ function PreviewPanel({
           đây.
         </p>
       </ListCard>
-      {error && <ApiFeedback error={error} />}
+      <OperationFeedback message={error} kind="error" onClose={() => setError("")} />
+      {existing && <OperationFeedback kind="info" message={`Bảng lương ${periodLabel(existing.period)} đã tồn tại. Bạn có thể xem bảng đã lưu.`} onClose={() => setExisting(null)} action={{ label: "Xem bảng lương", run: () => onExisting(existing.id) }} />}
       {preview && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-white p-4">

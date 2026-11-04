@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { ArrowLeft, RefreshCcw, Search } from "lucide-react";
@@ -238,14 +240,6 @@ export default function LeaveManagement({
         }
       />
       <ApiFeedback error={catalog.error} onRetry={catalog.reload} />
-      {notice && (
-        <p
-          role="status"
-          className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-        >
-          {notice}
-        </p>
-      )}
       {!preview && !apiEnabled && (
         <p
           role="status"
@@ -499,6 +493,7 @@ export default function LeaveManagement({
           onReviewed={review}
         />
       )}
+      <OperationFeedback message={notice} kind={preview ? "info" : "success"} onClose={() => setNotice("")} />
     </HrmAppShell>
   );
 }

@@ -14,7 +14,10 @@ function moduleAt(path, dependencies = {}) {
       jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
   }).outputText;
   const sandbox = { exports: {}, Date, Intl, process: { env: {} },
-    require: name => name in dependencies ? dependencies[name] : require(name) };
+    require: name => name in dependencies ? dependencies[name]
+      : name === "@/components/operation-dialog"
+        ? moduleAt("../src/components/operation-dialog.tsx", { ...dependencies })
+        : require(name) };
   vm.runInNewContext(source, sandbox);
   return sandbox.exports;
 }

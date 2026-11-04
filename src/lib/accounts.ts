@@ -125,25 +125,6 @@ function normalizeRoles(value: unknown) {
     .filter(Boolean);
 }
 
-function normalizeSearchText(value: string) {
-  return value.trim().toLocaleLowerCase("vi");
-}
-
-function accountMatchesKeyword(account: Account, keyword: string) {
-  const normalizedKeyword = normalizeSearchText(keyword);
-
-  if (!normalizedKeyword) {
-    return true;
-  }
-
-  return [
-    account.username,
-    account.email,
-    account.employeeCode,
-    account.fullName,
-  ].some((value) => normalizeSearchText(value).includes(normalizedKeyword));
-}
-
 function extractRows(payload: unknown) {
   if (Array.isArray(payload)) {
     return payload;
@@ -177,11 +158,11 @@ function extractTotal(payload: unknown, rows: unknown[]) {
   const record = asRecord(payload);
   const data = asRecord(record?.data);
 
-  return (
-    readNumber(record, [["totalElements"], ["total"], ["totalItems"]], -1) ||
-    readNumber(data, [["totalElements"], ["total"], ["totalItems"]], -1) ||
-    rows.length
-  );
+  // Số 0 là tổng hợp lệ; chỉ dùng fallback khi response thực sự không có tổng.
+  const direct = readNumber(record, [["totalElements"], ["total"], ["totalItems"]], -1);
+  if (direct >= 0) return direct;
+  const nested = readNumber(data, [["totalElements"], ["total"], ["totalItems"]], -1);
+  return nested >= 0 ? nested : rows.length;
 }
 
 export function normalizeAccount(raw: unknown): Account {
@@ -249,47 +230,24 @@ export async function fetchUserAccounts(params: AccountListParams, signal?: Abor
 
   const payload = await apiRequest<unknown>(`/accounts?${query.toString()}`, { signal });
   const rows = extractRows(payload);
-  let accounts = rows.map(normalizeAccount);
-  let total = extractTotal(payload, rows);
+  const accounts = rows.map(normalizeAccount);
+  const total = extractTotal(payload, rows);
 
-  if (keyword) {
-    accounts = accounts.filter((account) => accountMatchesKeyword(account, keyword));
-    total = accounts.length;
-
-    if (accounts.length === 0) {
-      const fallbackQuery = new URLSearchParams();
-
-      if (params.status) {
-        fallbackQuery.set("status", params.status);
-      }
-
-      fallbackQuery.set("page", "0");
-      fallbackQuery.set("size", "1000");
-
-      const fallbackPayload = await apiRequest<unknown>(`/accounts?${fallbackQuery.toString()}`, { signal });
-      const fallbackRows = extractRows(fallbackPayload);
-      const fallbackAccounts = fallbackRows
-        .map(normalizeAccount)
-        .filter((account) => accountMatchesKeyword(account, keyword));
-      const requestedPage = Math.max(params.page ?? 1, 1);
-      const requestedSize = params.size ?? 10;
-      const start = (requestedPage - 1) * requestedSize;
-
-      accounts = fallbackAccounts.slice(start, start + requestedSize);
-      total = fallbackAccounts.length;
-    }
-  }
+  // Chỉ server quyết định tập kết quả/tổng. Không dùng một trang bỏ lọc để giả tìm đủ họ tên.
+  signal?.throwIfAborted();
 
   const enriched = await Promise.all(
     accounts.map(async (account) => {
       try {
         return await fetchUserAccount(account.id, signal);
       } catch {
+        signal?.throwIfAborted();
         return account;
       }
     }),
   );
 
+  signal?.throwIfAborted();
   return {
     items: enriched,
     total,

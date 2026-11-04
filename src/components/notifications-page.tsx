@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -135,6 +137,7 @@ export default function NotificationsPage({
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [mutationError, setMutationError] = useState("");
+  const [dismissedError, setDismissedError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmAll, setConfirmAll] = useState(false);
@@ -168,6 +171,7 @@ export default function NotificationsPage({
     setAttempted(item);
     setNotice("");
     setMutationError("");
+    setDismissedError("");
     setDetailOpen(true);
     if (preview) {
       const updated = {
@@ -215,6 +219,7 @@ export default function NotificationsPage({
     lock.current = true;
     setBusy(true);
     setMutationError("");
+    setDismissedError("");
     setNotice("");
     const request = new AbortController();
     controller.current = request;
@@ -279,15 +284,7 @@ export default function NotificationsPage({
           refresh();
         }}
       />
-      {!detailOpen && !confirmAll && <ApiFeedback error={mutationError} />}
-      {notice && (
-        <p
-          role="status"
-          className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-        >
-          {notice}
-        </p>
-      )}
+      <OperationFeedback message={mutationError !== dismissedError ? mutationError : ""} kind="error" onClose={() => setDismissedError(mutationError)} />
       <ListCard
         title="Thông báo của bạn"
         description={
@@ -302,6 +299,7 @@ export default function NotificationsPage({
               disabled={busy || !unread || (!preview && !active)}
               onClick={() => {
                 setMutationError("");
+    setDismissedError("");
                 setConfirmAll(true);
               }}
               className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium disabled:opacity-40"
@@ -362,6 +360,7 @@ export default function NotificationsPage({
             setDetailOpen(false);
             setSelected(null);
             setMutationError("");
+    setDismissedError("");
           }}
         >
           <ApiFeedback
@@ -416,6 +415,7 @@ export default function NotificationsPage({
           </div>
         </Drawer>
       )}
+      <OperationFeedback message={notice} kind={preview ? "info" : "success"} onClose={() => setNotice("")} />
     </HrmAppShell>
   );
 }

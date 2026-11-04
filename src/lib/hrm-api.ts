@@ -106,6 +106,11 @@ export function getErrorMessage(error: unknown) {
     ? error.message
     : "Không thể kết nối máy chủ. Vui lòng thử lại.";
 }
+/** Lỗi mạng sau thao tác ghi chưa chứng minh server chưa lưu; yêu cầu kiểm lại, không tự gửi bù. */
+export function getOperationErrorMessage(error: unknown) {
+  return error instanceof ApiError ? getErrorMessage(error)
+    : "Chưa xác nhận được kết quả lưu. Vui lòng tải lại dữ liệu để kiểm tra trước khi thử lại.";
+}
 export function fetchPage<T>(
   path: string,
   params: Query,

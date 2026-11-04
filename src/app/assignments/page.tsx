@@ -1,7 +1,8 @@
 "use client";
 
 import { CalendarClock, GitBranch, UserCheck, UsersRound } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { ConfirmationDialog, OperationFeedback } from "@/components/operation-dialog";
 import HrmAppShell from "@/components/hrm-app-shell";
 import { ApiFeedback, LoadingRow } from "@/components/api-feedback";
 import {
@@ -24,7 +25,7 @@ import {
   fetchAll,
   fetchAssignmentDirectory,
   fetchMyProfile,
-  getErrorMessage,
+  getOperationErrorMessage,
   type AssignmentRecord,
   type CatalogRecord,
 } from "@/lib/hrm-api";
@@ -56,8 +57,18 @@ export default function EmployeeAssignmentPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
+  const [operationError, setOperationError] = useState("");
+  const [draft, setDraft] = useState<{ employeeId: number; departmentId: number; positionId: number; managerEmployeeId?: number } | null>(null);
+  const writeLock = useRef(false);
+  const [requestedEmployeeId, setRequestedEmployeeId] = useState("");
+  const openedRequest = useRef("");
+  // URL chỉ chọn trước hồ sơ; quyền và sự tồn tại vẫn được kiểm từ dữ liệu API.
+  useEffect(() => {
+    const timer = setTimeout(() => setRequestedEmployeeId(new URLSearchParams(window.location.search).get("employeeId") || ""), 0);
+    return () => clearTimeout(timer);
+  }, []);
   const rows = directory.data?.assignments ?? [];
-  const employees = directory.data?.employees ?? [];
+  const employees = useMemo(() => directory.data?.employees ?? [], [directory.data]);
   const current = rows.filter((row) => row.isCurrent);
   const filtered = rows.filter(
     (row) =>
@@ -81,11 +92,20 @@ export default function EmployeeAssignmentPage() {
     (session.data && !allowed
       ? "Bạn không có quyền quản lý phân công nhân viên."
       : directory.error || options.error);
+  useEffect(() => {
+    if (!allowed || !directory.data || !requestedEmployeeId || openedRequest.current === requestedEmployeeId) return;
+    if (!employees.some((employee) => String(employee.id) === requestedEmployeeId)) return;
+    // Tạo từ danh sách nhân viên mang đúng employees.id, không lấy accountId hoặc mã E... thay thế.
+    const timer = setTimeout(() => { openedRequest.current = requestedEmployeeId; setSelectedEmployeeId(requestedEmployeeId); setDialog({ mode: "create" }); }, 0);
+    return () => clearTimeout(timer);
+  }, [allowed, directory.data, employees, requestedEmployeeId]);
+  const currentAssignment = current.find((row) => row.employee.id === Number(selectedEmployeeId));
   function open(mode: Mode, row?: AssignmentRecord) {
     setDialog({ mode, row });
     setSelectedEmployeeId(row ? String(row.employee.id) : "");
     setFormError("");
     setNotice("");
+    setDraft(null);
   }
   function close() {
     if (!saving) {
@@ -97,6 +117,7 @@ export default function EmployeeAssignmentPage() {
     directory.reload();
     options.reload();
   }
+  // Kiểm bản nháp từ form theo employees.id và danh mục ACTIVE; chưa ghi phân công trước hộp xác nhận.
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!dialog || dialog.mode === "view" || saving || !allowed) return;
@@ -140,21 +161,26 @@ export default function EmployeeAssignmentPage() {
       ancestor = current.find((item) => item.employee.id === ancestor)?.manager
         ?.id;
     }
+    // Lưu bản nháp để người dùng xem lại; ở bước này chưa thay đổi employee_assignments.
+    setDraft({ employeeId, departmentId: nextDepartmentId, positionId, managerEmployeeId });
+  }
+  /** Chỉ xác nhận mới POST phân công; lỗi mạng không tự gửi lại để tránh ghi lịch sử hai lần. */
+  async function confirmAssignment() {
+    if (!draft || !allowed || writeLock.current) return;
+    writeLock.current = true;
     setSaving(true);
     try {
-      await createAssignment({
-        employeeId,
-        departmentId: nextDepartmentId,
-        positionId,
-        managerEmployeeId,
-      });
+      await createAssignment(draft);
+      setDraft(null);
       setDialog(null);
       setPage(1);
       setNotice("Đã lưu phân công mới và giữ lại lịch sử.");
       reload();
-    } catch (apiError) {
-      setFormError(getErrorMessage(apiError));
+    } catch (error) {
+      setDraft(null);
+      setOperationError(getOperationErrorMessage(error));
     } finally {
+      writeLock.current = false;
       setSaving(false);
     }
   }
@@ -324,9 +350,8 @@ export default function EmployeeAssignmentPage() {
           </table>
         </div>
       </ListCard>
-      <p role="status" className="text-sm text-muted-foreground">
-        {notice}
-      </p>
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
+      <OperationFeedback message={operationError} kind="error" onClose={() => setOperationError("")} />
       {dialog && (
         <Drawer
           title={
@@ -397,6 +422,11 @@ export default function EmployeeAssignmentPage() {
                         ))}
                     </select>
                   </FormField>
+                  <section className="rounded-md border border-border bg-muted/30 p-3 text-sm" aria-label="Phân công hiện tại">
+                    <h3 className="font-semibold">Phân công hiện tại</h3>
+                    <p>{currentAssignment ? `${currentAssignment.department.name} / ${currentAssignment.position.name}` : "Chưa được phân công"}</p>
+                    {currentAssignment && <p>Quản lý: {currentAssignment.manager?.fullName || "Chưa có quản lý"}</p>}
+                  </section>
                   <FormField label="Phòng ban">
                     <select
                       name="departmentId"
@@ -459,6 +489,13 @@ export default function EmployeeAssignmentPage() {
           </form>
         </Drawer>
       )}
+      {draft && <ConfirmationDialog title="Xác nhận phân công nhân viên" busy={saving} onClose={() => { if (!writeLock.current) setDraft(null); }} onConfirm={() => void confirmAssignment()}>
+        <p>Nhân viên: <strong>{employees.find((employee) => employee.id === draft.employeeId)?.fullName}</strong></p>
+        <p>Phòng ban mới: {options.data?.departments.find((item) => item.id === draft.departmentId)?.name}</p>
+        <p>Chức vụ mới: {options.data?.positions.find((item) => item.id === draft.positionId)?.name}</p>
+        <p>Quản lý mới: {employees.find((employee) => employee.id === draft.managerEmployeeId)?.fullName || "Chưa phân công"}</p>
+        <p>Phân công hiện tại: {currentAssignment ? `${currentAssignment.department.name} / ${currentAssignment.position.name} / ${currentAssignment.manager?.fullName || "Chưa có quản lý"}` : "Chưa được phân công"}</p>
+      </ConfirmationDialog>}
     </HrmAppShell>
   );
 }

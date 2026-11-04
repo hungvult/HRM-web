@@ -9,7 +9,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { getPostLoginPath, loginWithApi, type LoginPayload } from "@/lib/auth";
 
@@ -34,11 +34,23 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ identity?: string; password?: string }>({});
 
+  // Nếu API đăng xuất mất kết nối, thông báo rõ phiên cục bộ đã kết thúc nhưng server chưa được xác nhận.
+  useEffect(() => {
+    const notice = window.sessionStorage.getItem("hrm_logout_error");
+    if (!notice) return;
+    const timer = window.setTimeout(() => {
+      window.sessionStorage.removeItem("hrm_logout_error");
+      setMessage(notice);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Dùng khi gửi form đăng nhập; chỉ gọi API sau khi hai ô hợp lệ và giữ điều hướng theo role server trả.
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    setIsSubmitting(true);
 
     const formData = new FormData(event.currentTarget);
     const payload: LoginPayload = {
@@ -47,6 +59,18 @@ export default function LoginPage() {
       remember: formData.get("remember") === "on",
     };
 
+    // Kiểm trống trước khi gửi để thông báo tiếng Việt không phụ thuộc ngôn ngữ trình duyệt.
+    const errors = { identity: !payload.identity.trim() ? "Vui lòng nhập tên đăng nhập hoặc email." : undefined, password: !payload.password ? "Vui lòng nhập mật khẩu." : undefined };
+    setFieldErrors(errors);
+    const missing = errors.identity ? "identity" : errors.password ? "password" : "";
+    if (missing) {
+      setMessage(missing === "identity" ? "Vui lòng nhập tên đăng nhập hoặc email." : "Vui lòng nhập mật khẩu.");
+      const input = event.currentTarget.elements.namedItem(missing);
+      if (input instanceof HTMLInputElement) input.focus();
+      return;
+    }
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const response = await loginWithApi(payload);
       setMessage("Đăng nhập thành công. Đang chuyển tới hệ thống...");
@@ -82,7 +106,7 @@ export default function LoginPage() {
           </h1>
         </header>
 
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit} noValidate>
           <div className="space-y-2">
             <label
               htmlFor="identity"
@@ -94,6 +118,9 @@ export default function LoginPage() {
               id="identity"
               name="identity"
               type="text"
+              aria-invalid={Boolean(fieldErrors.identity)}
+              aria-describedby={fieldErrors.identity ? "identity-error" : undefined}
+              onInput={() => setFieldErrors((previous) => ({ ...previous, identity: undefined }))}
               autoComplete="username"
               required
               placeholder="VD: user@company.com / admin_01"
@@ -102,6 +129,7 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-2">
+            {fieldErrors.identity && <p id="identity-error" role="alert" className="text-xs text-destructive">{fieldErrors.identity}</p>}
             <label
               htmlFor="password"
               className="block text-[0.9rem] font-medium"
@@ -113,6 +141,9 @@ export default function LoginPage() {
                 id="password"
                 name="password"
                 type={showPassword ? "text" : "password"}
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? "password-error" : undefined}
+                onInput={() => setFieldErrors((previous) => ({ ...previous, password: undefined }))}
                 autoComplete="current-password"
                 required
                 placeholder="Nhập mật khẩu"
@@ -134,6 +165,7 @@ export default function LoginPage() {
             </div>
           </div>
 
+          {fieldErrors.password && <p id="password-error" role="alert" className="text-xs text-destructive">{fieldErrors.password}</p>}
           <div className="flex items-center justify-between gap-4 pt-0.5">
             <div className="flex items-center gap-2">
               <input

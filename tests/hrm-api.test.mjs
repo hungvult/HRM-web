@@ -39,6 +39,12 @@ const page = (content, hasNext = false) => ({
   hasNext,
 });
 
+test("a failed write transport does not claim that the server rejected the change", () => {
+  const api = client(async () => ({}));
+  assert.match(api.getOperationErrorMessage(new Error("Failed to fetch")), /tải lại dữ liệu/);
+  assert.equal(api.getOperationErrorMessage(new ApiError("trùng", 409, { message: "Email đã tồn tại." })), "Email đã tồn tại.");
+});
+
 test("employee list uses q, status and numeric relationship IDs", async () => {
   let url;
   const api = client(async (path) => {

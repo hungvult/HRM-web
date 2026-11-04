@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import {
   BriefcaseBusiness,
   Building2,
@@ -32,7 +34,7 @@ import {
   fetchDepartment,
   fetchPosition,
   fetchMyProfile,
-  getErrorMessage,
+  getOperationErrorMessage,
   saveCatalog,
   type CatalogRecord,
   type EmployeeRecord,
@@ -87,6 +89,7 @@ export default function OrganizationCatalog({
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [notice, setNotice] = useState("");
+  const [operationError, setOperationError] = useState("");
   const load = useCallback(
     (signal: AbortSignal) =>
       fetchCatalog(
@@ -206,7 +209,7 @@ export default function OrganizationCatalog({
       setNotice("Đã lưu danh mục lên hệ thống.");
       reload();
     } catch (apiError) {
-      setError(getErrorMessage(apiError));
+      setOperationError(getOperationErrorMessage(apiError));
     } finally {
       setSaving(false);
     }
@@ -378,9 +381,8 @@ export default function OrganizationCatalog({
           </table>
         </div>
       </ListCard>
-      <p role="status" className="text-center text-xs text-muted-foreground">
-        {notice}
-      </p>
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
+      <OperationFeedback message={operationError} kind="error" onClose={() => setOperationError("")} />
       {dialog && (
         <Drawer
           title={
