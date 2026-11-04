@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import { useCallback, useState } from "react";
 import { ArrowDownWideNarrow, History } from "lucide-react";
 import HrmAppShell from "@/components/hrm-app-shell";
@@ -162,14 +164,6 @@ export default function AttendanceManagementPage() {
           className="py-6 text-center text-sm text-muted-foreground"
         >
           Đang tải thông tin người dùng...
-        </p>
-      )}
-      {notice && (
-        <p
-          role="status"
-          className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-        >
-          {notice}
         </p>
       )}
       {allowed && (
@@ -446,6 +440,7 @@ export default function AttendanceManagementPage() {
           onSaved={saved}
         />
       )}
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
     </HrmAppShell>
   );
 }

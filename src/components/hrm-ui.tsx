@@ -9,6 +9,7 @@ import {
   RefreshCcw,
   Search,
   Trash2,
+  UserCheck,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -242,6 +243,7 @@ export function RowActions({
   onStatus,
   statusLabel,
   onDelete,
+  onAssign,
 }: {
   name: string;
   onView?: () => void;
@@ -249,6 +251,7 @@ export function RowActions({
   onStatus?: () => void;
   statusLabel?: string;
   onDelete?: () => void;
+  onAssign?: () => void;
 }) {
   const actions = [
     ...(onView ? [{ label: "Xem chi tiết", icon: Eye, run: onView }] : []),
@@ -257,6 +260,7 @@ export function RowActions({
       ? [{ label: statusLabel || "Đổi trạng thái", icon: Power, run: onStatus }]
       : []),
     ...(onDelete ? [{ label: "Xóa", icon: Trash2, run: onDelete }] : []),
+    ...(onAssign ? [{ label: "Phân công", icon: UserCheck, run: onAssign }] : []),
   ];
   return (
     <div className="flex justify-end gap-1">
@@ -310,11 +314,13 @@ export function Drawer({
   onClose,
   children,
   busy = false,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   busy?: boolean;
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
@@ -334,7 +340,7 @@ export function Drawer({
       onClick={(event) => {
         if (!busy && event.target === event.currentTarget) onClose();
       }}
-      className="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-xl border-l border-border bg-white p-0 text-foreground shadow-xl backdrop:bg-black/30"
+      className={"fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full border-l border-border bg-white p-0 text-foreground shadow-xl backdrop:bg-black/30 " + (wide ? "max-w-6xl" : "max-w-xl")}
     >
       <div className="flex min-h-full flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-white p-5">

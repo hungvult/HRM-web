@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronLeft, History, LoaderCircle, X } from "lucide-react";
 import { ApiFeedback } from "@/components/api-feedback";
@@ -112,6 +114,7 @@ export default function LeaveDetailDrawer({
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mutationError, setMutationError] = useState("");
+  const [operationError, setOperationError] = useState("");
   const [needsReload, setNeedsReload] = useState(false);
   const lock = useRef(false);
   const controller = useRef<AbortController | null>(null);
@@ -154,6 +157,7 @@ export default function LeaveDetailDrawer({
     } catch (error) {
       if (!request.signal.aborted) {
         setMutationError(leaveReviewError(error));
+        setOperationError(leaveReviewError(error));
         setNeedsReload(true);
       }
     } finally {
@@ -167,6 +171,7 @@ export default function LeaveDetailDrawer({
       onClose={onClose}
       busy={busy}
     >
+      <OperationFeedback message={operationError} kind="error" onClose={() => setOperationError("")} />
       <ApiFeedback error={error} onRetry={onRetry} />
       <ApiFeedback
         error={mutationError}

@@ -48,6 +48,40 @@ const preview = () => ({
   issues: [],
 });
 
+test("existing payroll lookup keeps exact year/month and the saved run ID", async () => {
+  const expected = { id: 731, period: { year: 2026, month: 9 }, status: "PUBLISHED" };
+  let calls = 0;
+  const signal = new AbortController().signal;
+  const api = client(undefined, async (path, query, actualSignal) => {
+    calls++;
+    assert.equal(path, "/payroll/runs");
+    assert.deepEqual(plain(query), { year: 2026, month: 9, page: 0, size: 1 });
+    assert.equal(actualSignal, signal);
+    return { content: [expected] };
+  });
+  assert.equal((await api.findExistingPayrollRun("2026-09", signal)).id, 731);
+  assert.equal(calls, 1);
+});
+
+test("empty existing payroll lookup returns null, invalid period never requests data", async () => {
+  let calls = 0;
+  const api = client(undefined, async () => { calls++; return { content: [] }; });
+  assert.equal(await api.findExistingPayrollRun("2026-09"), null);
+  await assert.rejects(api.findExistingPayrollRun("2026-13"), /hợp lệ/);
+  assert.equal(calls, 1);
+});
+
+test("lookup failure cannot be mistaken for a period that is free to create", async () => {
+  const failure = new Error("mất kết nối");
+  const api = client(undefined, async () => { throw failure; });
+  await assert.rejects(api.findExistingPayrollRun("2026-09"), (error) => error === failure);
+});
+
+test("lookup never opens a different payroll period returned unexpectedly", async () => {
+  const api = client(undefined, async () => ({ content: [{ id: 1, period: { year: 2026, month: 8 } }] }));
+  await assert.rejects(api.findExistingPayrollRun("2026-09"), /không khớp/);
+});
+
 test("payroll confirmation rejects blocked, expired, invalidated or mismatched periods", () => {
   const api = client(),
     now = Date.parse("2026-11-01T08:00:00Z");

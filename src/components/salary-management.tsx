@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import {
   useCallback,
   useEffect,
@@ -114,14 +116,6 @@ export default function SalaryManagement() {
         <ApiFeedback error="Chỉ nhân sự (HR) được quản lý thông tin lương nhân viên." />
       ) : (
         <>
-          {notice && (
-            <p
-              role="status"
-              className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-            >
-              {notice}
-            </p>
-          )}
           <ListCard
             title="Thông tin lương nhân viên"
             description={
@@ -308,6 +302,7 @@ export default function SalaryManagement() {
           )}
         </>
       )}
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
     </HrmAppShell>
   );
 }
@@ -623,7 +618,7 @@ function SalaryForm({
           mốc mới sẽ tự khép khoảng hiệu lực liền trước. Lương thực nhận được
           tính theo công hưởng lương trong bảng lương tháng.
         </p>
-        <ApiFeedback error={error} />
+        <OperationFeedback message={error} kind="error" onClose={() => setError("")} />
         {locked && (
           <p className="text-sm text-muted-foreground">
             Mốc này chỉ được xem. Đóng form và tải lại lịch sử để xem trạng thái

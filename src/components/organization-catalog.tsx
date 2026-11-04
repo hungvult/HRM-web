@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import {
   BriefcaseBusiness,
   Building2,
@@ -27,12 +29,13 @@ import {
   canManageHrm,
   catalogLabels,
   changeCatalogStatus,
+  deleteCatalog,
   fetchAll,
   fetchCatalog,
   fetchDepartment,
   fetchPosition,
   fetchMyProfile,
-  getErrorMessage,
+  getOperationErrorMessage,
   saveCatalog,
   type CatalogRecord,
   type EmployeeRecord,
@@ -45,7 +48,7 @@ import {
   type FormErrors,
 } from "@/lib/form-validation";
 
-type Mode = "create" | "edit" | "view" | "status";
+type Mode = "create" | "edit" | "view" | "status" | "delete";
 const blank: CatalogRecord = {
   id: 0,
   code: "",
@@ -87,6 +90,7 @@ export default function OrganizationCatalog({
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [notice, setNotice] = useState("");
+  const [operationError, setOperationError] = useState("");
   const load = useCallback(
     (signal: AbortSignal) =>
       fetchCatalog(
@@ -179,7 +183,10 @@ export default function OrganizationCatalog({
     setError("");
     setSaving(true);
     try {
-      if (dialog.mode === "status") {
+      // Xóa và đổi trạng thái chỉ chạy sau nút xác nhận trong drawer; lỗi giữ nguyên form.
+      if (dialog.mode === "delete") {
+        await deleteCatalog(path, dialog.item.id);
+      } else if (dialog.mode === "status") {
         await changeCatalogStatus(
           path,
           dialog.item.id,
@@ -192,10 +199,8 @@ export default function OrganizationCatalog({
           {
             name: String(form.get("name") ?? ""),
             description: String(form.get("description") ?? ""),
-            code:
-              isDepartment && dialog.mode === "create"
-                ? String(form.get("code") ?? "")
-                : undefined,
+            code: String(form.get("code") ?? ""),
+            status: String(form.get("status") ?? item.status) as "ACTIVE" | "INACTIVE",
             rankLevel: isDepartment ? undefined : Number(form.get("rankLevel")),
           },
           dialog.mode === "edit" ? dialog.item.id : undefined,
@@ -203,10 +208,10 @@ export default function OrganizationCatalog({
       }
       setDialog(null);
       setPage(1);
-      setNotice("Đã lưu danh mục lên hệ thống.");
+      setNotice(dialog.mode === "delete" ? "Đã xóa danh mục và giữ nguyên lịch sử phân công." : "Đã lưu danh mục lên hệ thống.");
       reload();
     } catch (apiError) {
-      setError(getErrorMessage(apiError));
+      setOperationError(getOperationErrorMessage(apiError));
     } finally {
       setSaving(false);
     }
@@ -362,6 +367,7 @@ export default function OrganizationCatalog({
                         name={item.name}
                         onView={() => open("view", item)}
                         onEdit={allowed ? () => open("edit", item) : undefined}
+                        onDelete={allowed ? () => open("delete", item) : undefined}
                         onStatus={
                           allowed ? () => open("status", item) : undefined
                         }
@@ -378,9 +384,8 @@ export default function OrganizationCatalog({
           </table>
         </div>
       </ListCard>
-      <p role="status" className="text-center text-xs text-muted-foreground">
-        {notice}
-      </p>
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
+      <OperationFeedback message={operationError} kind="error" onClose={() => setOperationError("")} />
       {dialog && (
         <Drawer
           title={
@@ -388,7 +393,7 @@ export default function OrganizationCatalog({
               ? "Tạo "
               : dialog.mode === "view"
                 ? "Chi tiết "
-                : dialog.mode === "status"
+                : dialog.mode === "delete" ? "Xóa " : dialog.mode === "status"
                   ? dialog.item.status === "ACTIVE"
                     ? "Vô hiệu hóa "
                     : "Kích hoạt "
@@ -420,11 +425,15 @@ export default function OrganizationCatalog({
                 disabled={saving || dialog.mode === "view"}
                 className="space-y-4"
               >
-                {dialog.mode === "status" ? (
+                {dialog.mode === "status" || dialog.mode === "delete" ? (
                   <>
                     <p className="font-medium">
                       {item.name} · {item.code}
                     </p>
+                    <p role="alert" className="rounded-md bg-amber-50 p-3 text-sm">{dialog.mode === "delete"
+                      ? "Chỉ xóa được danh mục không còn nhân viên được phân công. Lịch sử cũ vẫn được giữ. Bạn xác nhận xóa?"
+                      : item.status === "ACTIVE" ? "Vô hiệu hóa sẽ chặn phân công mới vào danh mục này. Nhân viên hiện tại vẫn giữ phân công cũ đến khi được phân công lại. Bạn xác nhận vô hiệu hóa?"
+                      : "Kích hoạt lại sẽ cho phép chọn danh mục trong phân công mới."}</p>
                     <FormField
                       label="Lý do thay đổi"
                       error={fieldErrors.reason}
@@ -442,13 +451,13 @@ export default function OrganizationCatalog({
                       <FormField label="Mã" error={fieldErrors.code}>
                         <input
                           name="code"
-                          readOnly={!isDepartment || dialog.mode !== "create"}
-                          required={isDepartment && dialog.mode === "create"}
+                          readOnly={dialog.mode === "view"}
+                          required
                           maxLength={30}
                           className={inputClass}
                           defaultValue={item.code}
                           placeholder={
-                            isDepartment ? "Mã phòng ban" : "Tự động sinh"
+                            isDepartment ? "Mã phòng ban" : "Mã chức vụ"
                           }
                         />
                       </FormField>
@@ -479,6 +488,9 @@ export default function OrganizationCatalog({
                         />
                       </FormField>
                     )}
+                    {dialog.mode !== "view" && <FormField label="Trạng thái"><select name="status" defaultValue={item.status} className={inputClass}>
+                      <option value="ACTIVE">Đang hoạt động</option><option value="INACTIVE">Vô hiệu hóa</option>
+                    </select></FormField>}
                     <FormField label="Mô tả" error={fieldErrors.description}>
                       <textarea
                         name="description"
@@ -510,7 +522,7 @@ export default function OrganizationCatalog({
                 readOnly={dialog.mode === "view"}
                 busy={saving}
                 primaryLabel={
-                  dialog.mode === "status"
+                  dialog.mode === "delete" ? "Xóa" : dialog.mode === "status"
                     ? dialog.item.status === "ACTIVE"
                       ? "Vô hiệu hóa"
                       : "Kích hoạt"

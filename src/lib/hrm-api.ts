@@ -55,6 +55,7 @@ export type AssignmentRecord = {
   createdAt: string;
 };
 export type EmployeePayload = {
+  employeeCode?: string;
   fullName: string;
   email: string;
   phone: string;
@@ -106,6 +107,11 @@ export function getErrorMessage(error: unknown) {
     ? error.message
     : "Không thể kết nối máy chủ. Vui lòng thử lại.";
 }
+/** Lỗi mạng sau thao tác ghi chưa chứng minh server chưa lưu; yêu cầu kiểm lại, không tự gửi bù. */
+export function getOperationErrorMessage(error: unknown) {
+  return error instanceof ApiError ? getErrorMessage(error)
+    : "Chưa xác nhận được kết quả lưu. Vui lòng tải lại dữ liệu để kiểm tra trước khi thử lại.";
+}
 export function fetchPage<T>(
   path: string,
   params: Query,
@@ -151,6 +157,7 @@ export const saveEmployee = (payload: EmployeePayload, id?: number) =>
   apiRequest<EmployeeRecord>(id ? `/employees/${id}` : "/employees", {
     method: id ? "PUT" : "POST",
     body: {
+      ...(!id ? { employeeCode: payload.employeeCode?.trim().toUpperCase() } : {}),
       fullName: payload.fullName.trim(),
       email: payload.email.trim(),
       phone: payload.phone.trim(),
@@ -185,6 +192,7 @@ export const saveCatalog = (
     description: string;
     code?: string;
     rankLevel?: number;
+    status?: "ACTIVE" | "INACTIVE";
   },
   id?: number,
 ) =>
@@ -193,12 +201,14 @@ export const saveCatalog = (
     body: {
       name: payload.name.trim(),
       description: payload.description.trim(),
-      ...(kind === "departments" && !id
-        ? { code: payload.code?.trim().toUpperCase() }
-        : {}),
+      code: payload.code?.trim().toUpperCase(),
+      status: payload.status,
       ...(kind === "positions" ? { rankLevel: payload.rankLevel } : {}),
     },
   });
+// Xóa mềm do server quyết định sau kiểm phân công, giữ nguyên FK lịch sử.
+export const deleteCatalog = (kind: "departments" | "positions", id: number) =>
+  apiRequest<void>(`/${kind}/${id}`, { method: "DELETE" });
 export const changeCatalogStatus = (
   kind: "departments" | "positions",
   id: number,

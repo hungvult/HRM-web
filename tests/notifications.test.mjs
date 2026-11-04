@@ -31,7 +31,10 @@ function moduleAt(path, dependencies = {}, env = {}) {
     Intl,
     process: { env },
     require: (name) =>
-      name in dependencies ? dependencies[name] : require(name),
+      name in dependencies ? dependencies[name]
+        : name === "@/components/operation-dialog"
+          ? moduleAt("../src/components/operation-dialog.tsx", { ...dependencies }, env)
+          : require(name),
   });
   return dependencies.__exports;
 }

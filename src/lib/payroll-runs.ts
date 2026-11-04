@@ -172,6 +172,16 @@ export const fetchPayrollRuns = (
     signal,
   );
 };
+/** Tìm bảng đã lưu đúng năm/tháng; lỗi tra cứu được trả ra, không coi là chưa có kỳ. */
+export async function findExistingPayrollRun(period: string, signal?: AbortSignal) {
+  const expected = parsePayrollPeriod(period);
+  if (!expected) throw new Error("Vui lòng chọn kỳ lương hợp lệ.");
+  const page = await fetchPayrollRuns({ period, status: "", page: 0, size: 1 }, signal);
+  // Chỉ mở đúng payroll_runs.id của kỳ đã chọn, không dùng ID nhân viên hay một kỳ khác.
+  const match = page.content.find((run) => run.period.year === expected.year && run.period.month === expected.month);
+  if (!match && page.content.length) throw new Error("Dữ liệu kỳ lương trả về không khớp kỳ đã chọn. Vui lòng tải lại để kiểm tra.");
+  return match ?? null;
+}
 export const fetchPayrollRun = (id: number, signal?: AbortSignal) =>
   apiRequest<PayrollRun>(`/payroll/runs/${validId(id)}`, { signal });
 export function fetchPayrollItems(
@@ -190,12 +200,12 @@ export function fetchPayrollItems(
     { signal },
   );
 }
-export function previewPayroll(period: string, signal?: AbortSignal) {
+export function previewPayroll(period: string, signal?: AbortSignal, regenerateRunId?: number) {
   const body = parsePayrollPeriod(period);
   if (!body) throw new Error("Vui lòng chọn kỳ lương hợp lệ.");
   return apiRequest<PayrollPreview>("/payroll/previews", {
     method: "POST",
-    body,
+    body: { ...body, regenerateRunId },
     signal,
   });
 }

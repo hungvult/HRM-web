@@ -1,7 +1,9 @@
 "use client";
 
 import { CalendarDays, IdCard, ShieldCheck, UsersRound } from "lucide-react";
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { ConfirmationDialog, OperationFeedback } from "@/components/operation-dialog";
 import HrmAppShell from "@/components/hrm-app-shell";
 import { ApiFeedback, LoadingRow } from "@/components/api-feedback";
 import {
@@ -27,14 +29,14 @@ import {
   fetchEmployees,
   fetchMyProfile,
   genderLabels,
-  getErrorMessage,
+  getOperationErrorMessage,
   saveEmployee,
   type CatalogRecord,
   type EmployeeGender,
   type EmployeeRecord,
   type EmploymentStatus,
 } from "@/lib/hrm-api";
-import { downloadCsv, formatDate } from "@/lib/hrm-format";
+import { formatDate } from "@/lib/hrm-format";
 import { useApiResource } from "@/lib/use-api-resource";
 import {
   focusFirstError,
@@ -44,6 +46,7 @@ import {
 
 type Mode = "create" | "edit" | "view" | "status";
 const fieldLabels = {
+  employeeCode: "Mã nhân viên",
   fullName: "Họ tên",
   email: "Email",
   phone: "Số điện thoại",
@@ -80,6 +83,10 @@ async function loadStats(signal: AbortSignal) {
 }
 export default function EmployeeManagementPage() {
   const session = useApiResource(fetchMyProfile);
+  const router = useRouter();
+  const writeLock = useRef(false);
+  const [statusDraft, setStatusDraft] = useState<{ id: number; name: string; status: EmploymentStatus; reason: string } | null>(null);
+  const [operationError, setOperationError] = useState("");
   const allowed = canManageHrm(session.data);
   const [query, setQuery] = useState("");
   const [departmentId, setDepartmentId] = useState("");
@@ -91,7 +98,6 @@ export default function EmployeeManagementPage() {
     item: EmployeeRecord;
   } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<FormErrors>({});
   const [notice, setNotice] = useState("");
@@ -117,7 +123,7 @@ export default function EmployeeManagementPage() {
     (signal: AbortSignal) => fetchEmployee(dialog?.item.id ?? 0, signal),
     [dialog?.item.id],
   );
-  const needsDetail = !!dialog && ["edit", "view"].includes(dialog.mode);
+  const needsDetail = !!dialog && ["edit", "view", "status"].includes(dialog.mode);
   const detail = useApiResource(loadDetail, allowed && needsDetail);
   const rows = resource.data?.content ?? [];
   const error =
@@ -147,9 +153,11 @@ export default function EmployeeManagementPage() {
     stats.reload();
     options.reload();
   }
+  // Nhận form tạo/sửa hồ sơ; employeeId lấy từ dòng đã chọn, chỉ trạng thái mới cần xác nhận riêng trước PATCH.
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!dialog || saving || !allowed || dialog.mode === "view") return;
+    if (needsDetail && (detail.loading || detail.error || !detail.data)) return;
     const errors = validateForm(event.currentTarget, fieldLabels);
     setFieldErrors(errors);
     setFormError("");
@@ -162,7 +170,7 @@ export default function EmployeeManagementPage() {
     const text = (key: string) => String(form.get(key) ?? "").trim();
     if (
       dialog.mode === "status" &&
-      text("employmentStatus") === dialog.item.employmentStatus
+      text("employmentStatus") === item.employmentStatus
     ) {
       setFormError("Vui lòng chọn trạng thái khác hiện tại.");
       return;
@@ -175,17 +183,19 @@ export default function EmployeeManagementPage() {
       setFormError("Ngày sinh phải trước ngày vào làm.");
       return;
     }
+    // UC004 yêu cầu xác nhận trạng thái: chuẩn bị bản nháp, chưa PATCH employees.
+    if (dialog.mode === "status") {
+      setStatusDraft({ id: item.id, name: item.fullName, status: text("employmentStatus") as EmploymentStatus, reason: text("reason") });
+      return;
+    }
+    if (writeLock.current) return;
+    writeLock.current = true;
     setSaving(true);
     try {
-      if (dialog.mode === "status") {
-        await changeEmployeeStatus(
-          dialog.item.id,
-          text("employmentStatus") as EmploymentStatus,
-          text("reason"),
-        );
-      } else {
+      {
         await saveEmployee(
           {
+            employeeCode: text("employeeCode"),
             fullName: text("fullName"),
             email: text("email"),
             phone: text("phone"),
@@ -202,44 +212,29 @@ export default function EmployeeManagementPage() {
       setNotice("Đã lưu hồ sơ lên hệ thống.");
       reload();
     } catch (apiError) {
-      setFormError(getErrorMessage(apiError));
+      setOperationError(getOperationErrorMessage(apiError));
     } finally {
+      writeLock.current = false;
       setSaving(false);
     }
   }
-  async function exportRows() {
-    if (exporting || !allowed) return;
-    setExporting(true);
-    setNotice("");
+  /** Xác nhận mới đổi employees.employment_status; hủy chỉ đóng hộp, giữ nguyên form. */
+  async function confirmStatus() {
+    if (!statusDraft || !allowed || writeLock.current) return;
+    writeLock.current = true;
+    setSaving(true);
     try {
-      const all = await fetchAll<EmployeeRecord>("/employees", {
-        q: query,
-        departmentId,
-        positionId,
-        employmentStatus: status,
-      });
-      downloadCsv("ho-so-nhan-vien.csv", [
-        [
-          "Mã nhân viên",
-          "Họ tên",
-          "Email",
-          "Phòng ban",
-          "Chức vụ",
-          "Trạng thái",
-        ],
-        ...all.map((employee) => [
-          employee.employeeCode,
-          employee.fullName,
-          employee.email,
-          employee.department?.name ?? "",
-          employee.position?.name ?? "",
-          employmentLabels[employee.employmentStatus],
-        ]),
-      ]);
-    } catch (apiError) {
-      setNotice(getErrorMessage(apiError));
+      await changeEmployeeStatus(statusDraft.id, statusDraft.status, statusDraft.reason);
+      setStatusDraft(null);
+      setDialog(null);
+      setNotice("Đã cập nhật trạng thái làm việc thành công.");
+      reload();
+    } catch (error) {
+      setStatusDraft(null);
+      setOperationError(getOperationErrorMessage(error));
     } finally {
-      setExporting(false);
+      writeLock.current = false;
+      setSaving(false);
     }
   }
   return (
@@ -248,12 +243,9 @@ export default function EmployeeManagementPage() {
       activeLabel="Hồ sơ nhân viên"
       title="Quản lý hồ sơ nhân viên"
       description="Thông tin và trạng thái làm việc"
-      actionLabel={allowed ? "Thêm hồ sơ" : undefined}
+      actionLabel={allowed ? "Tạo hồ sơ" : undefined}
       onAction={() => open("create")}
       actionDisabled={saving || loading || !!error}
-      secondaryActionLabel={allowed ? "Xuất danh sách" : undefined}
-      onSecondaryAction={exportRows}
-      secondaryActionDisabled={exporting || loading || !!error}
     >
       <StatisticSummary
         items={["Tổng hồ sơ", "Đang làm", "Tạm nghỉ", "Nghỉ việc"].map(
@@ -393,6 +385,8 @@ export default function EmployeeManagementPage() {
                         onEdit={
                           allowed ? () => open("edit", employee) : undefined
                         }
+                        statusLabel="Đổi trạng thái làm việc"
+                        onAssign={allowed ? () => router.push(`/assignments?employeeId=${employee.id}`) : undefined}
                         onStatus={
                           allowed ? () => open("status", employee) : undefined
                         }
@@ -406,9 +400,13 @@ export default function EmployeeManagementPage() {
           </table>
         </div>
       </ListCard>
-      <p role="status" className="text-center text-xs text-muted-foreground">
-        {notice}
-      </p>
+      <OperationFeedback message={notice} onClose={() => setNotice("")} />
+      <OperationFeedback message={operationError} kind="error" onClose={() => setOperationError("")} />
+      {statusDraft && <ConfirmationDialog title="Đổi trạng thái làm việc" busy={saving} onClose={() => { if (!writeLock.current) setStatusDraft(null); }} onConfirm={() => void confirmStatus()}>
+        <p>Nhân viên: <strong>{statusDraft.name}</strong></p>
+        <p>Trạng thái mới: {employmentLabels[statusDraft.status]}</p>
+        <p>Lý do: {statusDraft.reason}</p>
+      </ConfirmationDialog>}
       {dialog && (
         <Drawer
           title={
@@ -454,7 +452,7 @@ export default function EmployeeManagementPage() {
                       <select
                         name="employmentStatus"
                         className={inputClass}
-                        defaultValue={dialog.item.employmentStatus}
+                        defaultValue={item.employmentStatus}
                       >
                         {Object.entries(employmentLabels).map(
                           ([value, label]) => (
@@ -479,11 +477,14 @@ export default function EmployeeManagementPage() {
                   </>
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField label="Mã nhân viên">
+                    <FormField label="Mã nhân viên" error={fieldErrors.employeeCode}>
                       <input
-                        readOnly
-                        value={item.employeeCode}
-                        placeholder="Tự động sinh"
+                        name="employeeCode"
+                        readOnly={dialog.mode !== "create"}
+                        required
+                        maxLength={30}
+                        defaultValue={item.employeeCode}
+                        placeholder="Nhập mã nhân viên"
                         className={inputClass}
                       />
                     </FormField>
@@ -562,7 +563,8 @@ export default function EmployeeManagementPage() {
                   </div>
                 )}
               </fieldset>
-              <FormActions
+              {allowed && dialog.mode === "view" && <button type="button" onClick={() => router.push(`/assignments?employeeId=${item.id}`)} className="h-10 rounded-md border border-border px-4 text-sm">Phân công nhân viên</button>}
+            <FormActions
                 onClose={close}
                 readOnly={dialog.mode === "view"}
                 busy={saving}

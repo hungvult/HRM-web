@@ -68,7 +68,7 @@ function loginPage(loginWithApi) {
       replace: (path) => routes.push(path),
       push: () => assert.fail("successful login must replace the login history entry"),
     }) },
-    react: { useState: (initial) => [initial, (value) => messages.push(value)] },
+    react: { useState: (initial) => [initial, (value) => messages.push(value)], useEffect() {} },
     "react/jsx-runtime": { jsx: render, jsxs: render },
   }, {
     FormData: class {
