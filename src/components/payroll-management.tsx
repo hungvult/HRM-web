@@ -239,7 +239,7 @@ function RunList({
       description="Dữ liệu đã lưu của từng kỳ lương"
       actions={
         <>
-          <label className="w-44">
+          <label className="w-56 max-w-full shrink-0">
             <span className="sr-only">Kỳ lương</span>
             <input
               aria-label="Kỳ lương"
