@@ -7,9 +7,9 @@ import {
   Search,
   ShieldCheck,
   Users,
-  X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmationDialog, OperationFeedback } from "@/components/operation-dialog";
 
 import { ApiError } from "@/lib/api";
 import {
@@ -19,13 +19,14 @@ import {
   createUserAccount,
   fetchUserAccounts,
   updateUserAccount,
-  updateUserAccountRoles,
   updateUserAccountStatus,
 } from "@/lib/accounts";
 import HrmAppShell from "@/components/hrm-app-shell";
+import { ApiFeedback } from "@/components/api-feedback";
 import { fetchMyProfile } from "@/lib/hrm-api";
 import { useApiResource } from "@/lib/use-api-resource";
 import {
+  Drawer,
   FilterBar,
   ListCard,
   RowActions,
@@ -253,6 +254,13 @@ function resolveStatusUpdateMessage(error: unknown) {
 
 export default function AccountManagementPage() {
   const session = useApiResource(fetchMyProfile);
+  // Chỉ Admin đã xác thực mới tải dữ liệu và mở thao tác tài khoản, kể cả truy cập URL trực tiếp.
+  const allowed = Boolean(session.data?.roles.includes("ADMIN"));
+  const [pendingStatus, setPendingStatus] = useState<Account | null>(null);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const statusLock = useRef(false);
+  const saveLock = useRef(false);
+  const [noticeKind, setNoticeKind] = useState<"success" | "error">("success");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [total, setTotal] = useState(0);
   const [query, setQuery] = useState("");
@@ -285,6 +293,7 @@ export default function AccountManagementPage() {
 
   useEffect(() => {
     const controller = new AbortController();
+    if (!allowed) return () => controller.abort();
 
     fetchUserAccounts(
       {
@@ -296,11 +305,13 @@ export default function AccountManagementPage() {
       controller.signal,
     )
       .then((result) => {
+        if (controller.signal.aborted) return;
         setAccounts(result.items);
         setTotal(result.total);
         setSelectedIds([]);
       })
       .catch((apiError: unknown) => {
+        if (controller.signal.aborted) return;
         if (apiError instanceof DOMException && apiError.name === "AbortError") {
           return;
         }
@@ -316,7 +327,7 @@ export default function AccountManagementPage() {
       });
 
     return () => controller.abort();
-  }, [page, query, reloadKey, status]);
+  }, [allowed, page, query, reloadKey, status]);
 
   function prepareFetch() {
     setIsLoading(true);
@@ -326,6 +337,7 @@ export default function AccountManagementPage() {
   function reloadAccounts(message?: string) {
     prepareFetch();
     if (message) {
+      setNoticeKind("success");
       setNotice(message);
     }
     setReloadKey((current) => current + 1);
@@ -341,25 +353,30 @@ export default function AccountManagementPage() {
   }
 
   function openCreateForm() {
+    if (!allowed) return;
     setEditingAccount(null);
     setFormOpen(true);
     setNotice("");
   }
 
   function openEditForm(account: Account) {
+    if (!allowed) return;
     setEditingAccount(account);
     setFormOpen(true);
     setNotice("");
   }
 
+  // Lưu đúng accountId của dòng đang sửa; khóa gửi lặp và giữ validation/lỗi API cho form.
   async function handleSubmitAccount(payload: AccountFormPayload) {
+    if (!allowed || saveLock.current) return;
+    saveLock.current = true;
     setIsSaving(true);
     setNotice("");
 
     try {
       if (editingAccount) {
         await updateUserAccount(editingAccount.id, payload);
-        await updateUserAccountRoles(editingAccount.id, payload.roles);
+        // Thông tin và role được Backend lưu nguyên khối trong request update phía trên.
         reloadAccounts("Đã cập nhật tài khoản.");
       } else {
         await createUserAccount(payload);
@@ -372,14 +389,18 @@ export default function AccountManagementPage() {
     } catch (apiError) {
       const message = resolveAccountSaveMessage(apiError, Boolean(editingAccount));
 
-      setNotice(message);
       throw new Error(message);
     } finally {
+      saveLock.current = false;
       setIsSaving(false);
     }
   }
 
+  // Nút ở danh sách chỉ mở xác nhận; chỉ handler này mới PATCH khi người dùng đồng ý.
   async function handleToggleStatus(account: Account) {
+    if (!allowed || statusLock.current) return;
+    statusLock.current = true;
+    setChangingStatus(true);
     const nextStatus: AccountStatus = account.status === "ACTIVE" ? "LOCKED" : "ACTIVE";
     setNotice("");
 
@@ -391,10 +412,19 @@ export default function AccountManagementPage() {
           : `Đã mở khóa tài khoản ${account.username || account.email}.`,
       );
     } catch (apiError) {
+      setNoticeKind("error");
       setNotice(resolveStatusUpdateMessage(apiError));
+    } finally {
+      statusLock.current = false;
+      setChangingStatus(false);
+      setPendingStatus(null);
     }
   }
 
+  if (session.loading) return <main role="status" className="p-6">Đang kiểm tra quyền truy cập...</main>;
+  if (!allowed) return <HrmAppShell activeLabel="Quản lý tài khoản" title="Không có quyền truy cập" description="Chỉ Quản trị viên được quản lý tài khoản" user={session.data ?? undefined}>
+    <ApiFeedback error={session.error || "Bạn không có quyền quản lý tài khoản người dùng."} />
+  </HrmAppShell>;
   return (
     <HrmAppShell
       user={session.data}
@@ -404,6 +434,11 @@ export default function AccountManagementPage() {
       actionLabel="Thêm tài khoản"
       onAction={openCreateForm}
     >
+      <OperationFeedback message={notice} kind={noticeKind} onClose={() => setNotice("")} />
+      {pendingStatus && <ConfirmationDialog title={pendingStatus.status === "ACTIVE" ? "Khóa tài khoản" : "Mở khóa tài khoản"} busy={changingStatus} onClose={() => { if (!statusLock.current) setPendingStatus(null); }} onConfirm={() => void handleToggleStatus(pendingStatus)}>
+        <p>Tài khoản: <strong>{pendingStatus.username || pendingStatus.email}</strong></p>
+        <p>Trạng thái mới: {pendingStatus.status === "ACTIVE" ? "Đã khóa" : "Đang hoạt động"}.</p>
+      </ConfirmationDialog>}
       <StatisticSummary items={stats} />
 
       <ListCard
@@ -418,7 +453,7 @@ export default function AccountManagementPage() {
               setQuery(value);
               setPage(1);
             }}
-            placeholder="Tìm kiếm tài khoản"
+            placeholder="Tìm họ tên, tên đăng nhập hoặc email"
             filters={[
               {
                 label: "Mọi trạng thái",
@@ -587,7 +622,7 @@ export default function AccountManagementPage() {
                         <RowActions
                           name={account.fullName}
                           onEdit={() => openEditForm(account)}
-                          onStatus={() => void handleToggleStatus(account)}
+                          onStatus={() => setPendingStatus(account)}
                           statusLabel={
                             account.status === "ACTIVE" ? "Khóa" : "Mở khóa"
                           }
@@ -601,13 +636,7 @@ export default function AccountManagementPage() {
         </div>
       </ListCard>
 
-      <p
-        role="status"
-        aria-live="polite"
-        className="min-h-5 text-center text-xs text-muted-foreground"
-      >
-        {notice}
-      </p>
+
       {formOpen ? (
         <AccountFormDialog
           key={editingAccount?.id ?? "create"}
@@ -690,6 +719,7 @@ function LastLoginCell({ value }: { value: string }) {
   );
 }
 
+/** Form tạo/sửa dùng đúng account.id; ID liên kết thuộc employees, lỗi API giữ dữ liệu người dùng đã nhập. */
 function AccountFormDialog({
   account,
   isOpen,
@@ -704,6 +734,7 @@ function AccountFormDialog({
   onSubmit: (payload: AccountFormPayload) => Promise<void>;
 }) {
   const [formError, setFormError] = useState("");
+  const [operationError, setOperationError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<AccountFieldErrors>({});
 
   if (!isOpen) {
@@ -730,6 +761,7 @@ function AccountFormDialog({
 
   function applySubmitError(message: string) {
     setFormError(message);
+    setOperationError(message);
 
     if (/email/i.test(message)) {
       setFieldErrors((current) => ({ ...current, email: message }));
@@ -780,33 +812,16 @@ function AccountFormDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/35 px-4 py-6">
-      <section className="w-full max-w-2xl overflow-hidden rounded-md border border-border bg-card shadow-[0_24px_90px_rgba(15,23,42,0.24)]">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div>
-            <h2 className="font-display text-lg font-semibold">
-              {account ? "Cập nhật tài khoản" : "Thêm tài khoản"}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Cập nhật thông tin truy cập cho người dùng.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="grid size-8 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            onClick={onClose}
-            aria-label="Đóng biểu mẫu"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <form className="grid gap-4 p-5 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
+    <Drawer title={account ? "Cập nhật tài khoản" : "Tạo tài khoản"} onClose={onClose} busy={isSaving}>
+      <section>
+        <OperationFeedback message={operationError} kind="error" onClose={() => setOperationError("")} />
+        <form className="grid grid-cols-1 gap-4" onSubmit={handleSubmit} noValidate>
           {formError ? (
-            <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:col-span-2">
+            <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {formError}
             </div>
           ) : null}
+          <h3 className="font-semibold">Thông tin đăng nhập</h3>
           <label className="space-y-1.5" htmlFor="account-username">
             <span className="text-sm font-medium">Tên đăng nhập</span>
             <input
@@ -854,7 +869,40 @@ function AccountFormDialog({
               </span>
             ) : null}
           </label>
-          <label className="space-y-1.5 sm:col-span-2" htmlFor="account-employee-id">
+          {!account ? (
+            <label className="space-y-1.5" htmlFor="account-password">
+              <span className="text-sm font-medium">Mật khẩu</span>
+              <input
+                id="account-password"
+                name="password"
+                type="password"
+                autoComplete="new-password"
+                placeholder="Ví dụ: Password@123"
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? "account-password-error" : "account-password-help"}
+                onBlur={(event) => validateField(event.currentTarget.form, "password")}
+                onInput={(event) => refreshFieldIfInvalid(event.currentTarget.form, "password")}
+                className={joinClass(
+                  "h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:ring-1",
+                  fieldErrors.password
+                    ? "border-destructive focus:border-destructive focus:ring-destructive/25"
+                    : "border-input focus:border-ring focus:ring-ring",
+                )}
+              />
+              {fieldErrors.password ? (
+                <span id="account-password-error" className="block text-xs font-medium text-destructive">
+                  {fieldErrors.password}
+                </span>
+              ) : (
+                <span id="account-password-help" className="block text-xs text-muted-foreground">
+                  {passwordRules.join(" • ")}
+                </span>
+              )}
+            </label>
+          ) : null}
+
+          <h3 className="mt-2 border-t border-border pt-4 font-semibold">Liên kết hồ sơ nhân viên</h3>
+          <label className="space-y-1.5" htmlFor="account-employee-id">
             <span className="text-sm font-medium">ID hồ sơ nhân viên</span>
             <input
               id="account-employee-id"
@@ -886,6 +934,7 @@ function AccountFormDialog({
               </span>
             )}
           </label>
+          <h3 className="mt-2 border-t border-border pt-4 font-semibold">Phân quyền</h3>
           <label className="space-y-1.5" htmlFor="account-roles">
             <span className="text-sm font-medium">Vai trò</span>
             <select
@@ -921,39 +970,7 @@ function AccountFormDialog({
               </span>
             )}
           </label>
-          {!account ? (
-            <label className="space-y-1.5 sm:col-span-2" htmlFor="account-password">
-              <span className="text-sm font-medium">Mật khẩu</span>
-              <input
-                id="account-password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Ví dụ: Password@123"
-                aria-invalid={Boolean(fieldErrors.password)}
-                aria-describedby={fieldErrors.password ? "account-password-error" : "account-password-help"}
-                onBlur={(event) => validateField(event.currentTarget.form, "password")}
-                onInput={(event) => refreshFieldIfInvalid(event.currentTarget.form, "password")}
-                className={joinClass(
-                  "h-10 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:ring-1",
-                  fieldErrors.password
-                    ? "border-destructive focus:border-destructive focus:ring-destructive/25"
-                    : "border-input focus:border-ring focus:ring-ring",
-                )}
-              />
-              {fieldErrors.password ? (
-                <span id="account-password-error" className="block text-xs font-medium text-destructive">
-                  {fieldErrors.password}
-                </span>
-              ) : (
-                <span id="account-password-help" className="block text-xs text-muted-foreground">
-                  {passwordRules.join(" • ")}
-                </span>
-              )}
-            </label>
-          ) : null}
-
-          <div className="flex justify-end gap-2 border-t border-border pt-4 sm:col-span-2">
+          <div className="flex justify-end gap-2 border-t border-border pt-4">
             <button
               type="button"
               className="h-10 rounded-md border border-border px-4 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
@@ -973,6 +990,6 @@ function AccountFormDialog({
           </div>
         </form>
       </section>
-    </div>
+    </Drawer>
   );
 }

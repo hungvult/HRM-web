@@ -33,7 +33,10 @@ function moduleAt(path, dependencies = {}, env = {}) {
     AbortController,
     process: { env },
     require: (name) =>
-      name in dependencies ? dependencies[name] : require(name),
+      name in dependencies ? dependencies[name]
+        : name === "@/components/operation-dialog"
+          ? moduleAt("../src/components/operation-dialog.tsx", { ...dependencies }, env)
+          : require(name),
   };
   vm.runInNewContext(source, sandbox);
   return sandbox.exports;

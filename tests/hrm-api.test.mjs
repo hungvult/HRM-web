@@ -39,6 +39,12 @@ const page = (content, hasNext = false) => ({
   hasNext,
 });
 
+test("a failed write transport does not claim that the server rejected the change", () => {
+  const api = client(async () => ({}));
+  assert.match(api.getOperationErrorMessage(new Error("Failed to fetch")), /tải lại dữ liệu/);
+  assert.equal(api.getOperationErrorMessage(new ApiError("trùng", 409, { message: "Email đã tồn tại." })), "Email đã tồn tại.");
+});
+
 test("employee list uses q, status and numeric relationship IDs", async () => {
   let url;
   const api = client(async (path) => {
@@ -79,6 +85,7 @@ for (const [id, method, path] of [
       assert.equal(actual, path);
       assert.equal(options.method, method);
       assert.deepEqual(plain(options.body), {
+        ...(method === "POST" ? { employeeCode: "FORBIDDEN" } : {}),
         fullName: "Test HRM",
         email: "test@vteach.site",
         phone: "0901234567",
@@ -140,7 +147,7 @@ for (const kind of ["departments", "positions"]) {
       kind +
         " " +
         method +
-        " follows current code/rank contract without sending status",
+        " saves code, status and rank in one request",
       async () => {
         const api = client(async (path, options) => {
           assert.equal(path, id ? "/" + kind + "/" + id : "/" + kind);
@@ -148,7 +155,8 @@ for (const kind of ["departments", "positions"]) {
           assert.deepEqual(plain(options.body), {
             name: "Danh mục QA",
             description: "Mô tả",
-            ...(kind === "departments" && !id ? { code: "QA001" } : {}),
+            code: "QA001",
+            status: "INACTIVE",
             ...(kind === "positions" ? { rankLevel: 3 } : {}),
           });
         });

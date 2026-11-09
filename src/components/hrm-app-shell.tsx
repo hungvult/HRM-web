@@ -9,7 +9,6 @@ import {
   Download,
   IdCard,
   LogOut,
-  MapPin,
   Menu,
   Plus,
   Save,
@@ -19,11 +18,12 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { ReactNode, useState } from "react";
-import { useRouter } from "next/navigation";
-import { logoutClientSide } from "@/lib/auth";
+import { ReactNode, useRef, useState } from "react";
+import { ConfirmationDialog } from "@/components/operation-dialog";
+import { logoutCurrentSession } from "@/lib/auth";
 import { canManageHrm, roleLabels, type CurrentUser } from "@/lib/hrm-api";
 import { canManageAttendance } from "@/lib/attendances";
+import { canManageSalary } from "@/lib/salary-profiles";
 import NotificationBell from "@/components/notification-bell";
 
 type HrmAppShellProps = {
@@ -44,6 +44,7 @@ type HrmAppShellProps = {
   notificationPreviewCount?: number;
 };
 
+// Sidebar máy tính và mobile dùng chung các mục có màn hình thực tế; không hiển thị mục địa điểm chưa triển khai.
 const navGroups = [
   {
     label: "Quản trị",
@@ -65,8 +66,8 @@ const navGroups = [
     items: [
       { label: "Bảng công", href: "/attendances", icon: Clock3 },
       { label: "Nghỉ phép", href: "/leave-requests", icon: CalendarCheck },
-      { label: "Bảng lương", href: "#", icon: WalletCards },
-      { label: "Địa điểm làm việc", href: "#", icon: MapPin },
+      { label: "Quản lý lương", href: "/salary-profiles", icon: WalletCards },
+      { label: "Bảng lương", href: "/payroll-runs", icon: WalletCards },
     ],
   },
   {
@@ -96,12 +97,32 @@ export default function HrmAppShell({
   notificationPreviewCount,
   preview = false,
 }: HrmAppShellProps) {
-  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const logoutLock = useRef(false);
   const ActionIcon = actionIcon === "save" ? Save : Plus;
+
+  // Gọi hủy phiên trước khi tải trang đăng nhập mới để bỏ cả cache điều hướng; lỗi server được báo ở trang đăng nhập.
+  async function handleLogout() {
+    // Chỉ chạy sau xác nhận; khóa ref chặn hai lượt bấm trước khi nút kịp render lại.
+    if (logoutLock.current) return;
+    logoutLock.current = true;
+    setLoggingOut(true);
+    try {
+      await logoutCurrentSession();
+    } catch {
+      window.sessionStorage.setItem("hrm_logout_error", "Đã đăng xuất trên trình duyệt. Chưa thể xác nhận hủy phiên trên máy chủ do lỗi kết nối.");
+    } finally {
+      window.location.replace("/login");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground lg:flex">
+      {confirmLogout && <ConfirmationDialog title="Xác nhận đăng xuất" busy={loggingOut} onClose={() => { if (!logoutLock.current) setConfirmLogout(false); }} onConfirm={() => void handleLogout()} label="Đăng xuất">
+        <p>Bạn có muốn đăng xuất khỏi hệ thống?</p>
+      </ConfirmationDialog>}
       {sidebarOpen ? (
         <button
           type="button"
@@ -171,7 +192,9 @@ export default function HrmAppShell({
               items: group.items.filter(
                 (item) =>
                   item.href === "/profile" ||
-                  (item.href === "/leave-requests"
+                  (["/salary-profiles", "/payroll-runs"].includes(item.href)
+                    ? canManageSalary(user ?? null)
+                    : item.href === "/leave-requests"
                     ? user?.roles.some((role) => ["ADMIN", "HR", "MANAGER"].includes(role))
                     : item.href === "/attendances"
                     ? canManageAttendance(user ?? null)
@@ -236,10 +259,8 @@ export default function HrmAppShell({
         <div className="shrink-0 border-t border-border p-3">
           <button
             type="button"
-            onClick={() => {
-              logoutClientSide();
-              router.push("/login");
-            }}
+            onClick={() => setConfirmLogout(true)}
+            disabled={loggingOut}
             className="flex h-9 w-full items-center gap-3 rounded-md px-3 text-sm text-destructive hover:bg-destructive/10"
           >
             <LogOut className="size-4" />

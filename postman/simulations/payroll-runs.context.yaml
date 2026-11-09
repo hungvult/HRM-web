@@ -1,0 +1,30 @@
+purpose:
+  stands_in_for: Backend payroll HTTP APIs from PR 77 (90c4fe8) and PR 79 (e880956).
+  unblocks: Verify the real P1T-246 web UI through HTTP without creating or publishing real payroll.
+assumptions:
+  - id: payroll-api-contract
+    status: supported
+    claim: Management routes require HR; previews use year/month and confirmation uses previewToken. Read responses have nested period while writes have flat year/month.
+    reason: Controller and DTO source read at the reviewed backend heads; client serializes those contracts.
+    verification: On 2026-11-01 reviewed PayrollRunController, PayrollViewController and response DTOs; web unit tests check request shapes. Real Test GET list and filtered queries returned 200 after CD of 4b3f554.
+    source: https://github.com/hungvult/HRM-backend/pull/77; https://github.com/hungvult/HRM-backend/pull/79; src/lib/payroll-runs.ts; tests/payroll-runs.test.mjs
+    updated_at: "2026-11-01"
+  - id: caller-write-recovery
+    status: supported
+    claim: The web caller blocks stale/expired previews and does not automatically resubmit an uncertain payroll write in the exercised local flow.
+    reason: Browser observed disabled confirmation and an actionable message; the uncertain mock stored one run before returning 500, and the caller recovered it through the list.
+    verification: On 2026-11-01 ran the real production build on port 3196 via Postman simulation port 4496. Preview, confirm and publish appeared in simulation request events. Blocked, expired and stale modes disabled confirm. Uncertain mode left the write counter at four after one success-create, one publish, one rejected stale request and one uncertain create. This establishes caller behavior under the model, not real server write guarantees.
+    source: postman/mocks/payroll-runs/default.js; src/components/payroll-management.tsx; docs/P1T-246-payroll-runs.md
+    updated_at: "2026-11-01"
+  - id: production-payroll-readiness
+    status: unknown
+    claim: The deployed Test environment has complete inputs and an agreed daily standard to create and publish a real payroll period.
+    reason: Backend image 4b3f554 deployed successfully and read smoke passed, but PAYROLL_STANDARD_MINUTES_PER_DAY was absent. The synthetic 480-minute fixture is not an approved runtime value.
+    verification: On 2026-11-01 inspected the Test container image and presence of the named variable only. Postman ran six requests with seven passing assertions for login, reads, parameter validation and logout. No real payroll confirmation or publication was performed. Configure the business-approved daily standard and complete source data before QA acceptance.
+    source: docs/P1T-246-payroll-runs.md; https://github.com/hungvult/HRM-backend/actions/runs/41301913224
+    updated_at: "2026-11-01"
+fingerprints:
+  - id: local-p1t246-working-tree
+    date: "2026-11-01"
+    commit: b9871a179bd81f653a3227a917f8401b401adef4 plus uncommitted P1T-246 implementation at verification time
+    cli: Postman CLI 1.73.0 local simulation and collection runner

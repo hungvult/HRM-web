@@ -1,5 +1,7 @@
 "use client";
 
+import { OperationFeedback } from "@/components/operation-dialog";
+
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import { History, Pencil } from "lucide-react";
 import { ApiError } from "@/lib/api";
@@ -199,7 +201,7 @@ function AttendanceForm({
     `ID ${values.employeeId}`;
   return (
     <div className="space-y-4">
-      <ApiFeedback error={error} />
+      <OperationFeedback message={error} kind="error" onClose={() => setError("")} />
       {confirming ? (
         <>
           <h3 className="font-semibold">
