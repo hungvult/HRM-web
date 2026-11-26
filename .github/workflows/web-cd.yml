@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - develop
+      - main
+      - master
 
 env:
   REGISTRY: ghcr.io
@@ -18,9 +20,37 @@ jobs:
       contents: read
       packages: write
 
+    outputs:
+      container_name: ${{ steps.deploy-vars.outputs.container_name }}
+      host_port: ${{ steps.deploy-vars.outputs.host_port }}
+      image_tag: ${{ steps.deploy-vars.outputs.image_tag }}
+      network_name: ${{ steps.deploy-vars.outputs.network_name }}
+
     steps:
       - name: Checkout source code
         uses: actions/checkout@v7
+
+      - name: Resolve deployment target
+        id: deploy-vars
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            develop)
+              echo "container_name=hrm-web" >> "$GITHUB_OUTPUT"
+              echo "host_port=8083" >> "$GITHUB_OUTPUT"
+              echo "image_tag=test" >> "$GITHUB_OUTPUT"
+              echo "network_name=hrm-network" >> "$GITHUB_OUTPUT"
+              ;;
+            main|master)
+              echo "container_name=hrm-web-prod" >> "$GITHUB_OUTPUT"
+              echo "host_port=18083" >> "$GITHUB_OUTPUT"
+              echo "image_tag=prod" >> "$GITHUB_OUTPUT"
+              echo "network_name=hrm-prod-network" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported branch: ${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -32,13 +62,13 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
-            -t ${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.IMAGE_NAME }}:${{ steps.deploy-vars.outputs.image_tag }} \
             -t ${{ env.IMAGE_NAME }}:${{ github.sha }} \
             .
 
       - name: Push Docker image
         run: |
-          docker push ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:${{ steps.deploy-vars.outputs.image_tag }}
           docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
   deploy:
@@ -51,17 +81,21 @@ jobs:
         uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          CONTAINER_NAME: ${{ needs.docker.outputs.container_name }}
+          HOST_PORT: ${{ needs.docker.outputs.host_port }}
+          IMAGE_TAG: ${{ needs.docker.outputs.image_tag }}
+          NETWORK_NAME: ${{ needs.docker.outputs.network_name }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
-          envs: GHCR_PAT
+          envs: GHCR_PAT,CONTAINER_NAME,HOST_PORT,IMAGE_TAG,NETWORK_NAME
           script: |
             set -e
 
             echo "========================================"
-            echo "Starting HRM Web deployment"
+            echo "Starting HRM Web deployment: $IMAGE_TAG"
             echo "========================================"
 
             echo "Logging in to GHCR..."
@@ -69,37 +103,41 @@ jobs:
               --username hungvult \
               --password-stdin
 
-            echo "Pulling latest web image..."
-            docker pull ghcr.io/hungvult/hrm-web:latest
+            echo "Pulling web image..."
+            docker pull ghcr.io/hungvult/hrm-web:$IMAGE_TAG
+
+            echo "Ensuring Docker network exists..."
+            docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || docker network create "$NETWORK_NAME"
 
             echo "Stopping old HRM web container..."
-            docker stop hrm-web 2>/dev/null || true
+            docker stop "$CONTAINER_NAME" 2>/dev/null || true
 
             echo "Removing old HRM web container..."
-            docker rm hrm-web 2>/dev/null || true
+            docker rm "$CONTAINER_NAME" 2>/dev/null || true
 
             echo "Starting new HRM web container..."
             docker run -d \
-              --name hrm-web \
+              --name "$CONTAINER_NAME" \
               --restart unless-stopped \
-              -p 8083:3000 \
-              ghcr.io/hungvult/hrm-web:latest
+              --network "$NETWORK_NAME" \
+              -p 127.0.0.1:$HOST_PORT:3000 \
+              ghcr.io/hungvult/hrm-web:$IMAGE_TAG
 
             echo "Waiting for web container..."
             sleep 10
 
             echo "Checking container status..."
-            docker ps --filter name=hrm-web
+            docker ps --filter name="$CONTAINER_NAME"
 
             echo "Checking web logs..."
-            docker logs hrm-web --tail 30
+            docker logs "$CONTAINER_NAME" --tail 30
 
             echo "Testing web endpoint..."
-            curl -I --max-time 10 http://localhost:8083 || true
+            curl -I --max-time 10 http://127.0.0.1:$HOST_PORT || true
 
             echo "Logging out from GHCR..."
             docker logout ghcr.io || true
 
             echo "========================================"
-            echo "HRM Web deployment completed"
+            echo "HRM Web deployment completed: $IMAGE_TAG"
             echo "========================================"
